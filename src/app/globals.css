@@ -1,0 +1,71 @@
+/* ── FullCalendar: force its CSS to load in Next.js (bundled in @fullcalendar/core) ── */
+/* FullCalendar v6 auto-injects styles when the component mounts; this file
+   just ensures our overrides are always available. */
+
+/* Reset */
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; -webkit-font-smoothing: antialiased; }
+
+/* ── FullCalendar visual overrides ─────────────────────────────────────── */
+.fc {
+  font-family: "DM Sans", "Cairo", sans-serif;
+}
+
+.fc .fc-toolbar-title {
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+.fc .fc-button {
+  background-color: #0A6EBD !important;
+  border-color: #0A6EBD !important;
+  border-radius: 8px !important;
+  font-weight: 600 !important;
+  text-transform: capitalize !important;
+}
+
+.fc .fc-button:hover {
+  background-color: #064A8B !important;
+  border-color: #064A8B !important;
+}
+
+.fc .fc-button-active {
+  background-color: #064A8B !important;
+}
+
+.fc .fc-daygrid-event,
+.fc .fc-timegrid-event {
+  border-radius: 6px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  padding: 1px 4px !important;
+  cursor: pointer;
+}
+
+.fc .fc-timegrid-slot {
+  height: 40px !important;
+}
+
+.fc .fc-col-header-cell {
+  background: #F8FAFC;
+  font-weight: 700;
+}
+
+.fc-theme-standard td, .fc-theme-standard th {
+  border-color: rgba(148, 163, 184, 0.2) !important;
+}
+
+/* RTL calendar toolbar fix */
+[dir="rtl"] .fc .fc-toolbar {
+  flex-direction: row-reverse;
+}
+[dir="rtl"] .fc .fc-toolbar-chunk {
+  display: flex;
+  flex-direction: row-reverse;
+}
+
+/* ── MUI scrollbar polish ──────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #f1f5f9; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }

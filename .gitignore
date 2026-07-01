@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+
+# Environment files (never commit secrets)
+.env
+.env.local
+.env*.local
+
+# Prisma
+# (schema.prisma IS committed; generated client is not)
+
+# Locally-stored offer images (only relevant when NOT using Vercel Blob —
+# i.e. when deployed on Hostinger/VPS/Docker with local disk storage).
+# These are real uploaded files, not build output — if your deploy process
+# re-clones the repo on every deploy (e.g. `git pull` based workflows),
+# make sure this folder is also excluded from any "clean" step, or
+# uploaded offer images will be deleted on every deploy.
+public/uploads/
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/
+next-env.d.ts
+*.tsbuildinfo

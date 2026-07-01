@@ -1,0 +1,293 @@
+// This is your Prisma schema file for SmartClinic
+// Database: PostgreSQL
+// Generated from: Mongoose/MongoDB models (smartclinic-v11)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  superadmin
+  admin
+  doctor
+}
+
+enum UserStatus {
+  pending
+  approved
+  rejected
+  suspended
+}
+
+enum PreferredLang {
+  en
+  ar
+}
+
+enum BookingStatus {
+  pending
+  confirmed
+  cancelled
+  no_show   @map("no-show")
+  completed
+}
+
+enum BookingSource {
+  whatsapp
+  dashboard
+  api
+  instagram
+}
+
+enum HolidayType {
+  weekly
+  date
+}
+
+enum AuditStatus {
+  success
+  failure
+}
+
+enum WhatsAppStep {
+  main_menu
+  select_doctor
+  select_service
+  select_date
+  select_time
+  ask_name
+  ask_whatsapp
+  ask_call_time
+  offers
+  done
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+model User {
+  id                   String        @id @default(cuid())
+  name                 String
+  email                String        @unique
+  password             String
+  role                 UserRole      @default(admin)
+  status               UserStatus    @default(pending)
+  preferredLang        PreferredLang @default(en)
+
+  // Relations (foreign keys)
+  doctorId             String?       // link if role=doctor
+  doctor               Doctor?       @relation("UserDoctor", fields: [doctorId], references: [id])
+
+  approvedById         String?
+  approvedBy           User?         @relation("UserApprovedBy", fields: [approvedById], references: [id])
+  approvedAt           DateTime?
+
+  resetPasswordToken   String?
+  resetPasswordExpires DateTime?
+  lastLogin            DateTime?
+
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  // Reverse relations
+  approvedUsers        User[]        @relation("UserApprovedBy")
+  createdOffers        Offer[]       @relation("OfferCreatedBy")
+  createdHolidays      Holiday[]     @relation("HolidayCreatedBy")
+  blockedSlots         BlockedSlot[] @relation("BlockedSlotBlockedBy")
+  auditLogs            AuditLog[]    @relation("AuditLogUser")
+
+  @@map("users")
+}
+
+model Doctor {
+  id           String   @id @default(cuid())
+  nameEn       String
+  nameAr       String
+  specialtyEn  String?
+  specialtyAr  String?
+  phone        String?
+  email        String?   @unique
+  calendarId   String
+
+  // Working hours stored as simple strings (HH:MM)
+  workingStart String   @default("09:00")
+  workingEnd   String   @default("17:00")
+
+  // Working days stored as int[] (0=Sun, 1=Mon … 6=Sat)
+  workingDays  Int[]    @default([0, 1, 2, 3, 4])
+
+  // Break time
+  breakEnabled  Boolean @default(false)
+  breakStart    String  @default("13:00")
+  breakEnd      String  @default("14:00")
+  breakDuration Int     @default(60) // minutes
+
+  slotDuration  Int     @default(30) // minutes
+  isActive      Boolean @default(true)
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  bookings     Booking[]     @relation("BookingDoctor")
+  blockedSlots BlockedSlot[] @relation("BlockedSlotDoctor")
+  linkedUsers  User[]        @relation("UserDoctor")
+  holidays     HolidayDoctor[]
+
+  @@map("doctors")
+}
+
+model Booking {
+  id              String        @id @default(cuid())
+  name            String
+  phone           String
+  service         String
+  date            String        // YYYY-MM-DD (kept as string to match original)
+  time            String        // HH:MM
+  status          BookingStatus @default(pending)
+  notes           String?
+
+  doctorId        String
+  doctor          Doctor        @relation("BookingDoctor", fields: [doctorId], references: [id])
+
+  // Google Calendar sync
+  calendarEventId String?
+  calendarLink    String?
+  calendarSynced  Boolean       @default(false)
+
+  // WhatsApp
+  reminderSent    Boolean       @default(false)
+  reminderSentAt  DateTime?
+
+  // Source
+  source          BookingSource @default(dashboard)
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Prevent double bookings (replaces Mongoose compound unique index)
+  @@unique([doctorId, date, time])
+  @@index([doctorId, date])
+  @@index([status])
+  @@map("bookings")
+}
+
+model BlockedSlot {
+  id            String   @id @default(cuid())
+  doctorId      String
+  doctor        Doctor   @relation("BlockedSlotDoctor", fields: [doctorId], references: [id])
+  date          String   // YYYY-MM-DD
+  time          String?  // HH:MM — null means whole day blocked
+  reason        String   @default("")
+  isWholeDay    Boolean  @default(false)
+  syncedToGoogle Boolean @default(false)
+  googleEventId String?
+
+  blockedById   String?
+  blockedBy     User?    @relation("BlockedSlotBlockedBy", fields: [blockedById], references: [id])
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([doctorId, date])
+  @@map("blocked_slots")
+}
+
+model Offer {
+  id            String    @id @default(cuid())
+  titleEn       String
+  titleAr       String
+  descriptionEn String?
+  descriptionAr String?
+  imageUrl      String?
+  imageBase64   String?   // base64 for WhatsApp/IG display
+  code          String?
+  isActive      Boolean   @default(true)
+  expiresAt     DateTime?
+
+  createdById   String?
+  createdBy     User?     @relation("OfferCreatedBy", fields: [createdById], references: [id])
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("offers")
+}
+
+model Holiday {
+  id         String      @id @default(cuid())
+  type       HolidayType
+  dayOfWeek  Int?        // 0=Sun..6=Sat — for weekly holidays
+  date       String?     // YYYY-MM-DD — for specific date holidays
+  nameEn     String      @default("")
+  nameAr     String      @default("")
+  applyToAll Boolean     @default(true)
+
+  // Specific doctors (many-to-many via join table)
+  doctors    HolidayDoctor[]
+
+  createdById String?
+  createdBy   User?    @relation("HolidayCreatedBy", fields: [createdById], references: [id])
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("holidays")
+}
+
+// Join table: Holiday <-> Doctor (for applyToAll=false cases)
+model HolidayDoctor {
+  holidayId  String
+  holiday    Holiday @relation(fields: [holidayId], references: [id], onDelete: Cascade)
+  doctorId   String
+  doctor     Doctor  @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@id([holidayId, doctorId])
+  @@map("holiday_doctors")
+}
+
+model AuditLog {
+  id        String      @id @default(cuid())
+  userId    String?
+  user      User?       @relation("AuditLogUser", fields: [userId], references: [id])
+  userName  String?
+  userEmail String?
+  action    String      // e.g. 'CREATE_BOOKING', 'UPDATE_STATUS'
+  entity    String?     // e.g. 'Booking', 'Doctor', 'User'
+  entityId  String?
+  details   Json?       // before/after or extra info (replaces Mixed)
+  ip        String?
+  userAgent String?
+  status    AuditStatus @default(success)
+
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  @@index([createdAt(sort: Desc)])
+  @@index([userId])
+  @@index([action])
+  @@map("audit_logs")
+}
+
+model WhatsAppSession {
+  id        String       @id @default(cuid())
+  phone     String       @unique
+  step      WhatsAppStep @default(main_menu)
+
+  // Session data (stored as JSON — replaces nested Mongoose sub-doc)
+  data      Json         @default("{}")
+
+  expiresAt DateTime     @default(dbgenerated("NOW() + INTERVAL '30 minutes'"))
+
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@index([expiresAt])
+  @@map("whatsapp_sessions")
+}
