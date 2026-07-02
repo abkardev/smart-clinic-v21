@@ -3,7 +3,11 @@ import bcrypt from 'bcryptjs';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from './prisma';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'smartclinic_jwt_secret_change_in_prod';
+const JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable is not set');
+}
 
 export function signToken(userId: string): string {
   return jwt.sign({ id: userId }, JWT_SECRET, { expiresIn: '7d' });

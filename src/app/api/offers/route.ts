@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { uploadOfferImage } from '@/app/lib/offerStorage';
 import { prisma } from '@/app/lib/prisma';
 import { getAuthUser, requireRole } from '@/app/lib/auth';
-import { logAudit, auditOptsFromRequest } from '@/app/lib/audit';
+import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
 
 // GET /api/offers
 export async function GET(req: NextRequest) {
@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    await logAudit('CREATE_OFFER', 'Offer', offer.id, { titleEn }, auditOptsFromRequest(req, user!));
+    await logAudit(AuditAction.OFFER_CREATED, 'Offer', offer.id, { titleEn }, auditOptsFromRequest(req, user!));
     return NextResponse.json(offer, { status: 201 });
   } catch (err) {
     console.error(err);

@@ -14,10 +14,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: 'Too many registration attempts. Please try again later.', messageAr: 'محاولات تسجيل كثيرة. يرجى المحاولة لاحقاً.' }, { status: 429 });
     }
 
-    const { name, email, password, role } = await req.json() as { name: string; email: string; password: string; role?: string };
+    const { name, email, password, role: _role } = await req.json() as { name: string; email: string; password: string; role?: string };
+    void _role; // role is always assigned by the server, never from user input
 
     if (!name || !email || !password) {
       return NextResponse.json({ message: 'Name, email and password are required' }, { status: 400 });
+    }
+
+    if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return NextResponse.json({ message: 'Invalid email format' }, { status: 400 });
+    }
+
+    if (password.length < 8) {
+      return NextResponse.json({ message: 'Password must be at least 8 characters' }, { status: 400 });
+    }
+
+    if (name.length > 100) {
+      return NextResponse.json({ message: 'Name is too long' }, { status: 400 });
+    }
+
+    if (email.length > 254) {
+      return NextResponse.json({ message: 'Email is too long' }, { status: 400 });
     }
 
     const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
@@ -36,7 +53,7 @@ export async function POST(req: NextRequest) {
         name,
         email: email.toLowerCase(),
         password: await hashPassword(password),
-        role: (isFirst ? 'superadmin' : (role ?? 'admin')) as UserRole,
+        role: (isFirst ? 'superadmin' : 'admin') as UserRole,
         status: (isFirst ? 'approved' : 'pending') as UserStatus,
       },
     });

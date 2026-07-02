@@ -1,11 +1,13 @@
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
 import { getAvailableSlots } from '@/app/lib/availability';
 import type { BookingStatus, BookingSource } from '@prisma/client';
 import { apiResponse, toDbStatus } from '@/app/lib/apiResponse';
-import { logAudit, auditOptsFromRequest } from '@/app/lib/audit';
+import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
+import { metrics } from '@/app/lib/metrics';
 
 const doctorSelect = {
   id: true, nameEn: true, nameAr: true, specialtyEn: true, specialtyAr: true,
@@ -50,6 +52,7 @@ export async function GET(req: NextRequest) {
 
 // POST /api/bookings
 export async function POST(req: NextRequest) {
+  const reqStart = Date.now();
   try {
     const body = await req.json() as {
       doctorId: string; date: string; time: string;
@@ -94,13 +97,16 @@ export async function POST(req: NextRequest) {
     } catch { /* calendar sync is non-fatal */ }
 
     const { doctor: doc, ...rest } = booking;
+    metrics.bookingsCreated.inc();
+    metrics.bookingCreationLatency.observe(Date.now() - reqStart);
     // Log after calendar sync
-    await logAudit('CREATE_BOOKING', 'Booking', booking.id,
+    await logAudit(AuditAction.BOOKING_CREATED, 'Booking', booking.id,
       { name: booking.name, phone: booking.phone, date: booking.date, time: booking.time, doctorId: booking.doctorId, source: booking.source },
       auditOptsFromRequest(req)
     );
     return apiResponse({ ...rest, doctorId: doc }, { status: 201 });
   } catch (err: unknown) {
+    metrics.bookingsFailed.inc();
     const e = err as { code?: string; message?: string };
     if (e.code === 'P2002') {
       return NextResponse.json({ message: 'This time slot is already booked' }, { status: 409 });

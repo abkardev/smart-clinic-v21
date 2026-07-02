@@ -258,7 +258,9 @@ model AuditLog {
   user      User?       @relation("AuditLogUser", fields: [userId], references: [id])
   userName  String?
   userEmail String?
-  action    String      // e.g. 'CREATE_BOOKING', 'UPDATE_STATUS'
+  action    String      // e.g. 'BOOKING_CREATED', 'USER_UPDATED'
+  category  String?     // 'BOOKING' | 'AUTH' | 'DOCTOR' | 'SYSTEM' | 'OFFERS' | 'SETTINGS'
+  severity  String?     // 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL'
   entity    String?     // e.g. 'Booking', 'Doctor', 'User'
   entityId  String?
   details   Json?       // before/after or extra info (replaces Mixed)
@@ -266,28 +268,91 @@ model AuditLog {
   userAgent String?
   status    AuditStatus @default(success)
 
+  correlationId String?
+  bookingId     String?
+
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 
   @@index([createdAt(sort: Desc)])
   @@index([userId])
   @@index([action])
+  @@index([category])
+  @@index([correlationId])
+  @@index([entity, entityId])
+  @@index([severity])
   @@map("audit_logs")
 }
 
 model WhatsAppSession {
-  id        String       @id @default(cuid())
-  phone     String       @unique
-  step      WhatsAppStep @default(main_menu)
+  id             String       @id @default(cuid())
+  phone          String       @unique
+  step           WhatsAppStep @default(main_menu)
 
   // Session data (stored as JSON — replaces nested Mongoose sub-doc)
-  data      Json         @default("{}")
+  data           Json         @default("{}")
 
-  expiresAt DateTime     @default(dbgenerated("NOW() + INTERVAL '30 minutes'"))
+  // Optimistic locking — incremented on every write, checked on update
+  sessionVersion Int          @default(1)
 
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  expiresAt      DateTime     @default(dbgenerated("NOW() + INTERVAL '30 minutes'"))
+
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   @@index([expiresAt])
   @@map("whatsapp_sessions")
+}
+
+// ─── Message deduplication (Phases 1-2) ──────────────────────────────────────
+model ProcessedMessage {
+  messageId   String   @id
+  source      String   // 'whatsapp' | 'instagram'
+  userId      String   // phone or ig_<id>
+  processedAt DateTime @default(now())
+  expiresAt   DateTime
+
+  @@index([processedAt])
+  @@map("processed_messages")
+}
+
+// ─── Conversation analytics (Phase 5) ─────────────────────────────────────────
+model ConversationEvent {
+  id               String   @id @default(cuid())
+  conversationId   String
+  userId           String
+  platform         String   // 'whatsapp' | 'instagram'
+  currentState     String?
+  previousState    String?
+  eventType        String   // 'TEXT' | 'LIST_REPLY' | 'NAVIGATION' | 'SYSTEM'
+  payloadId        String?
+  isText           Boolean
+  executionTimeMs  Int?
+  success          Boolean  @default(true)
+  errorMessage     String?
+  bookingCreated   Boolean  @default(false)
+  bookingId        String?
+  bookingCancelled Boolean  @default(false)
+  sessionExpired   Boolean  @default(false)
+  correlationId    String?
+  messageId        String?
+  webhookId        String?
+  createdAt        DateTime @default(now())
+
+  @@index([conversationId])
+  @@index([userId])
+  @@index([createdAt(sort: Desc)])
+  @@map("conversation_events")
+}
+
+// ─── Idempotency lock (Phase 2) ───────────────────────────────────────────────
+model IdempotencyLock {
+  key         String   @id
+  bookingId   String?
+  status      String   @default("locked") // 'locked' | 'completed' | 'failed'
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  @@index([expiresAt])
+  @@map("idempotency_locks")
 }

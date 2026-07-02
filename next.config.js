@@ -4,6 +4,13 @@ const nextConfig = {
   // This is a SPA — all pages require auth context, no static content.
   output: undefined,
 
+  // ── Serverless function tracing ──────────────────────────────────────────
+  experimental: {
+    outputFileTracingIncludes: {
+      '/*': ['./node_modules/.prisma/**/*', './node_modules/@prisma/**/*'],
+    },
+  },
+
   // ── Compiler ──────────────────────────────────────────────────────────────
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production'
@@ -20,6 +27,7 @@ const nextConfig = {
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'X-Frame-Options',        value: 'DENY' },
           { key: 'X-XSS-Protection',       value: '1; mode=block' },
+          { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' },
         ],
       },
       {

@@ -14,26 +14,27 @@ export async function POST(req: NextRequest) {
     }
 
     const { email } = await req.json() as { email: string };
-    const user = await prisma.user.findUnique({ where: { email: email?.toLowerCase() } });
-    if (!user) {
-      return NextResponse.json({ message: 'No account with that email' }, { status: 404 });
+    const user = email
+      ? await prisma.user.findUnique({ where: { email: email.toLowerCase() } })
+      : null;
+
+    if (user) {
+      const token = crypto.randomBytes(32).toString('hex');
+      const hashed = crypto.createHash('sha256').update(token).digest('hex');
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          resetPasswordToken: hashed,
+          resetPasswordExpires: new Date(Date.now() + 60 * 60 * 1000),
+        },
+      });
+
+      const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL}/reset-password/${token}`;
+      console.log(`[DEV] Reset URL for ${user.email}: ${resetUrl}`);
     }
 
-    const token = crypto.randomBytes(32).toString('hex');
-    const hashed = crypto.createHash('sha256').update(token).digest('hex');
-
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        resetPasswordToken: hashed,
-        resetPasswordExpires: new Date(Date.now() + 60 * 60 * 1000), // 1 hour
-      },
-    });
-
-    const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL}/reset-password/${token}`;
-    console.log(`[DEV] Reset URL for ${user.email}: ${resetUrl}`);
-
-    return NextResponse.json({ message: 'Password reset link sent', resetUrl });
+    return NextResponse.json({ message: 'If an account with that email exists, a password reset link has been sent.' });
   } catch (err) {
     console.error(err);
     return NextResponse.json({ message: 'Server error' }, { status: 500 });

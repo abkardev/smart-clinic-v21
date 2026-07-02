@@ -1,9 +1,10 @@
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
 import { apiResponse, toDbStatus } from '@/app/lib/apiResponse';
-import { logAudit, auditOptsFromRequest } from '@/app/lib/audit';
+import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
 import { getAvailableSlots } from '@/app/lib/availability';
 
 // PATCH /api/bookings/[id]/drag-drop
@@ -35,7 +36,7 @@ export async function PATCH(
       await updateCalendarEvent(updated, booking.doctor);
     } catch { /* non-fatal */ }
 
-    await logAudit('DRAG_DROP_BOOKING', 'Booking', params.id,
+    await logAudit(AuditAction.BOOKING_DRAGGED, 'Booking', params.id,
       { oldDate: booking.date, oldTime: booking.time, newDate: date, newTime: time },
       auditOptsFromRequest(req)
     );

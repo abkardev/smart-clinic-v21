@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
 
     // Update lastLogin without triggering any hooks
     await prisma.user.update({ where: { id: user.id }, data: { lastLogin: new Date() } });
-    await logAudit('LOGIN', 'User', user.id,
+    await logAudit(AuditAction.LOGIN, 'User', user.id,
       { email: user.email, role: user.role },
       { userId: user.id, userName: user.name, userEmail: user.email,
         ip: req.headers.get('x-forwarded-for') ?? undefined,

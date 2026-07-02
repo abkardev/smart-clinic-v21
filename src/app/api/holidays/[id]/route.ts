@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
 import { getAuthUser, requireRole } from '@/app/lib/auth';
-import { logAudit, auditOptsFromRequest } from '@/app/lib/audit';
+import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
 
 // DELETE /api/holidays/[id]
 export async function DELETE(
@@ -17,7 +17,7 @@ export async function DELETE(
 
   try {
     await prisma.holiday.delete({ where: { id: params.id } });
-    await logAudit('DELETE_HOLIDAY', 'Holiday', params.id, null, auditOptsFromRequest(req, user!));
+    await logAudit(AuditAction.HOLIDAY_DELETED, 'Holiday', params.id, null, auditOptsFromRequest(req, user!));
     return NextResponse.json({ message: 'Holiday deleted' });
   } catch (err: unknown) {
     const e = err as { code?: string };

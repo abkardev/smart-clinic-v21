@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
 import { getAuthUser } from '@/app/lib/auth';
-import { logAudit, auditOptsFromRequest } from '@/app/lib/audit';
+import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
 
 interface DoctorBody {
   nameEn: string; nameAr: string;
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    await logAudit('CREATE_DOCTOR', 'Doctor', doctor.id,
+    await logAudit(AuditAction.DOCTOR_CREATED, 'Doctor', doctor.id,
       { nameEn: doctor.nameEn, nameAr: doctor.nameAr, specialtyEn: doctor.specialtyEn },
       auditOptsFromRequest(req, user!)
     );

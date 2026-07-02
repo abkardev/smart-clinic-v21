@@ -4,7 +4,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
 import { getAuthUser, requireRole } from '@/app/lib/auth';
 
-// GET /api/audit-logs
+const MAX_LIMIT = 200;
+
 export async function GET(req: NextRequest) {
   const { user, error } = await getAuthUser(req);
   if (error) return error;
@@ -13,18 +14,32 @@ export async function GET(req: NextRequest) {
 
   try {
     const { searchParams } = new URL(req.url);
-    const userId    = searchParams.get('userId');
-    const action    = searchParams.get('action');
-    const entity    = searchParams.get('entity');
-    const startDate = searchParams.get('startDate');
-    const endDate   = searchParams.get('endDate');
-    const page      = parseInt(searchParams.get('page') ?? '1');
-    const limit     = parseInt(searchParams.get('limit') ?? '50');
+    const userId        = searchParams.get('userId');
+    const action        = searchParams.get('action');
+    const category      = searchParams.get('category');
+    const severity      = searchParams.get('severity');
+    const entity        = searchParams.get('entity');
+    const entityId      = searchParams.get('entityId');
+    const correlationId = searchParams.get('correlationId');
+    const status        = searchParams.get('status');
+    const startDate     = searchParams.get('startDate');
+    const endDate       = searchParams.get('endDate');
+    let page            = parseInt(searchParams.get('page') ?? '1');
+    let limit           = parseInt(searchParams.get('limit') ?? '50');
+
+    if (page < 1) page = 1;
+    if (limit < 1) limit = 50;
+    if (limit > MAX_LIMIT) limit = MAX_LIMIT;
 
     const where: Record<string, unknown> = {};
     if (userId) where.userId = userId;
-    if (entity) where.entity = entity;
     if (action) where.action = { contains: action, mode: 'insensitive' };
+    if (category) where.category = category;
+    if (severity) where.severity = severity;
+    if (entity) where.entity = entity;
+    if (entityId) where.entityId = entityId;
+    if (correlationId) where.correlationId = correlationId;
+    if (status) where.status = status;
     if (startDate || endDate) {
       const createdAt: Record<string, Date> = {};
       if (startDate) createdAt.gte = new Date(startDate);
@@ -37,7 +52,6 @@ export async function GET(req: NextRequest) {
     const [logs, total] = await Promise.all([
       prisma.auditLog.findMany({
         where,
-        include: { user: { select: { name: true, email: true, role: true } } },
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,

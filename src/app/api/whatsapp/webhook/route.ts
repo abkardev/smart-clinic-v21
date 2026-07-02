@@ -1,10 +1,16 @@
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 import { NextRequest } from 'next/server';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { processMessage, BotAdapter } from '@/app/lib/botEngine';
 import { BookingSource } from '@prisma/client';
 import { logger } from '@/app/lib/logger';
+import { generateWebhookId, getOrCreateCorrelationId } from '@/app/lib/correlation';
+import { isDuplicateMessage } from '@/app/lib/duplicateGuard';
+import { fetchWithRetry } from '@/app/lib/retry';
+import { trackEvent } from '@/app/lib/conversationTracker';
+import { metrics } from '@/app/lib/metrics';
 
 const WA_URL = () => `https://graph.facebook.com/v21.0/${process.env.WHATSAPP_PHONE_ID}/messages`;
 const WA_HEADERS = () => ({
@@ -12,13 +18,12 @@ const WA_HEADERS = () => ({
   'Content-Type': 'application/json',
 });
 
-// ─── Webhook signature verification ───────────────────────────────────────────
 function verifySignature(rawBody: string, signatureHeader: string | null): boolean {
   if (!signatureHeader) return false;
   const appSecret = process.env.WHATSAPP_APP_SECRET;
   if (!appSecret) {
-    logger.warn('WHATSAPP_APP_SECRET not set — skipping signature verification');
-    return true;
+    logger.error('WHATSAPP_APP_SECRET not set — rejecting webhook');
+    return false;
   }
   const expected = `sha256=${createHmac('sha256', appSecret).update(rawBody).digest('hex')}`;
   try {
@@ -30,41 +35,26 @@ function verifySignature(rawBody: string, signatureHeader: string | null): boole
   }
 }
 
-// ─── Retry helper for Meta API calls ──────────────────────────────────────────
-async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 2): Promise<Response> {
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    const res = await fetch(url, options);
-    if (res.ok) return res;
-    if (res.status === 429 || res.status >= 500) {
-      if (attempt < maxRetries) {
-        const delay = Math.pow(2, attempt) * 500;
-        logger.warn(`Meta API transient error (${res.status}), retrying in ${delay}ms`, { attempt, status: res.status });
-        await new Promise(r => setTimeout(r, delay));
-        continue;
-      }
-    }
-    return res;
-  }
-  throw new Error('fetchWithRetry: all retries exhausted');
-}
-
-// ─── WhatsApp adapter ─────────────────────────────────────────────────────────
-function makeWhatsAppAdapter(): BotAdapter {
+function makeWhatsAppAdapter(cid: string): BotAdapter {
   return {
     async sendText(to, text) {
+      const start = Date.now();
       try {
         const res = await fetchWithRetry(WA_URL(), {
           method: 'POST',
           headers: WA_HEADERS(),
           body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'text', text: { body: text } }),
-        });
-        if (!res.ok) logger.error('WA sendText failed', { status: res.status, body: await res.text() });
+        }, cid);
+        metrics.metaApiLatency.observe(Date.now() - start);
+        if (!res.ok) logger.error('WA sendText failed', { status: res.status, body: await res.text(), correlationId: cid });
       } catch (err) {
-        logger.error('WA sendText error', { error: String(err) });
+        metrics.metaApiLatency.observe(Date.now() - start);
+        logger.error('WA sendText error', { error: String(err), correlationId: cid });
       }
     },
 
     async sendList(to, header, body, button, sections) {
+      const start = Date.now();
       try {
         const res = await fetchWithRetry(WA_URL(), {
           method: 'POST',
@@ -81,10 +71,12 @@ function makeWhatsAppAdapter(): BotAdapter {
               action: { button, sections },
             },
           }),
-        });
+        }, cid);
+        metrics.metaApiLatency.observe(Date.now() - start);
         if (!res.ok) throw new Error(await res.text());
       } catch (err) {
-        logger.warn('WA sendList failed, falling back to plain text', { error: String(err) });
+        metrics.metaApiLatency.observe(Date.now() - start);
+        logger.warn('WA sendList failed, falling back to plain text', { error: String(err), correlationId: cid });
         const items = sections.flatMap(s => s.rows).map((r, i) => `${i + 1}. ${r.title}`).join('\n');
         await this.sendText(to, `${body}\n\n${items}\n\nأرسل رقم اختيارك / Send the number of your choice.`);
       }
@@ -92,7 +84,6 @@ function makeWhatsAppAdapter(): BotAdapter {
   };
 }
 
-// ─── GET — webhook verification ───────────────────────────────────────────────
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const mode      = searchParams.get('hub.mode');
@@ -107,25 +98,46 @@ export async function GET(req: NextRequest) {
   return new Response('Forbidden', { status: 403 });
 }
 
-// ─── POST — incoming message ──────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
+  const webhookStart = Date.now();
+  const webhookId = generateWebhookId();
+
   const rawBody = await req.text().catch(() => '');
   let body: any = null;
   try { body = JSON.parse(rawBody); } catch { /* invalid JSON */ }
 
   if (!verifySignature(rawBody, req.headers.get('X-Hub-Signature-256'))) {
-    logger.warn('WhatsApp webhook — invalid signature');
+    logger.warn('WhatsApp webhook — invalid signature', { webhookId });
     return new Response('Forbidden', { status: 403 });
   }
 
   try {
-    const messages = body?.entry?.[0]?.changes?.[0]?.value?.messages ?? [];
-    const adapter = makeWhatsAppAdapter();
+    const entry     = body?.entry?.[0];
+    const changes   = entry?.changes?.[0];
+    const messages  = changes?.value?.messages ?? [];
+    const metadata  = changes?.value?.metadata ?? {};
 
-    logger.info('WhatsApp webhook POST', { messageCount: messages.length });
+    // Use phone_number_id as part of the webhook dedup key
+    const webhookDedupKey = `${entry?.id || ''}:${changes?.field || ''}:${metadata?.phone_number_id || ''}`;
+
+    if (!messages.length) {
+      return new Response('OK', { status: 200 });
+    }
+
+    metrics.whatsappWebhooksTotal.inc();
+    metrics.whatsappWebhookLatency.observe(Date.now() - webhookStart);
+
+    const adapter = makeWhatsAppAdapter(webhookId);
+    logger.info('WhatsApp webhook POST', {
+      messageCount: messages.length, webhookId, webhookDedupKey,
+      duration: Date.now() - webhookStart,
+    });
 
     for (const message of messages) {
+      const msgStart = Date.now();
       const phone = message.from as string;
+      const messageId = (message.id || message.wamid?.id || '') as string;
+
       const userInput: string =
         message.type === 'text' ? (message.text?.body ?? '').trim() :
         message.type === 'interactive'
@@ -133,11 +145,57 @@ export async function POST(req: NextRequest) {
           : '';
 
       if (!userInput) continue;
-      logger.debug('Processing WhatsApp message', { phone, type: message.type, userInput });
-      await processMessage(phone, userInput, adapter, BookingSource.whatsapp);
+
+      const correlationId = getOrCreateCorrelationId(webhookId);
+      const isTextMessage = message.type === 'text';
+
+      if (messageId) {
+        const dup = await isDuplicateMessage(messageId, 'whatsapp', phone, correlationId);
+        if (dup) {
+          metrics.whatsappDuplicates.inc();
+          logger.info('[Webhook] Duplicate skipped', { messageId, phone, webhookId, correlationId });
+          trackEvent({
+            conversationId: `conv_${phone}`,
+            userId: phone,
+            platform: 'whatsapp',
+            eventType: 'DUPLICATE_SKIPPED',
+            payloadId: userInput,
+            isText: isTextMessage,
+            success: true,
+            correlationId,
+            messageId,
+            webhookId,
+          }).catch(() => {});
+          continue;
+        }
+      }
+
+      logger.debug('Processing WhatsApp message', {
+        phone, type: message.type, userInput, isText: isTextMessage,
+        messageId, correlationId, webhookId,
+      });
+
+      try {
+        await processMessage(
+          phone, userInput, adapter,
+          BookingSource.whatsapp, isTextMessage,
+          correlationId, messageId, webhookId
+        );
+      } catch (err) {
+        logger.error('processMessage error', {
+          error: String(err), phone, userInput, correlationId, webhookId,
+        });
+      }
+
+      metrics.whatsappMessagesProcessed.inc();
+      logger.trace('[Webhook] message processed', {
+        phone, userInput, duration: Date.now() - msgStart, correlationId,
+      });
     }
   } catch (err) {
-    logger.error('WhatsApp webhook error', { error: String(err) });
+    logger.error('WhatsApp webhook error', {
+      error: String(err), webhookId, duration: Date.now() - webhookStart,
+    });
   }
 
   return new Response('OK', { status: 200 });

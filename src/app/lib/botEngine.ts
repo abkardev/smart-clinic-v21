@@ -1,9 +1,20 @@
 import { prisma } from './prisma';
 import { getAvailableSlots, listUpcomingDays } from './availability';
-import { MSG, CALL_TIMES, SERVICES_BILINGUAL, TRIGGERS, BookingData } from './botMessages';
+import {
+  MSG, CALL_TIMES, SERVICES_BILINGUAL, TRIGGERS,
+  BookingData, STEP_ORDER, NAVIGATION_IDS, EDIT_FIELD_MAP,
+} from './botMessages';
 import { BookingSource } from '@prisma/client';
+import { logger } from './logger';
+import { logAudit, AuditAction } from './audit';
+import {
+  getSession, setSession, clearSession,
+  ConcurrencyError, SessionResult,
+} from './sessionManager';
+import { createBookingIdempotent } from './bookingLock';
+import { trackEvent } from './conversationTracker';
+import { metrics } from './metrics';
 
-// ─── Adapter interface (implemented separately for WA and IG) ────────────────
 export interface BotAdapter {
   sendText(to: string, text: string): Promise<void>;
   sendList(to: string, header: string, body: string, button: string, sections: ListSection[]): Promise<void>;
@@ -14,111 +25,169 @@ export interface ListSection {
   rows: { id: string; title: string; description?: string }[];
 }
 
-// ─── Session helpers using Prisma WhatsAppSession ────────────────────────────
-async function getSession(phone: string) {
-  return prisma.whatsAppSession.findUnique({ where: { phone } });
+export interface MessageHandler {
+  handle(
+    userId: string, input: string, data: BookingData,
+    adapter: BotAdapter, source: BookingSource,
+    correlationId: string,
+  ): Promise<string | undefined>;
 }
 
-async function setSession(phone: string, step: string, data: BookingData) {
-  return prisma.whatsAppSession.upsert({
-    where: { phone },
-    create: {
-      phone,
-      step: step as never,
-      data: data as never,
-      expiresAt: new Date(Date.now() + 30 * 60 * 1000),
-    },
-    update: {
-      step: step as never,
-      data: data as never,
-      expiresAt: new Date(Date.now() + 30 * 60 * 1000),
-    },
-  });
-}
-
-async function clearSession(phone: string) {
-  await prisma.whatsAppSession.deleteMany({ where: { phone } });
-}
-
-// ─── English-only name validator ─────────────────────────────────────────────
-// Per product requirement: the patient must type their name in English
-// letters only (spaces, hyphens, and apostrophes allowed for names like
-// "Al-Otaibi" or "O'Brien"). No digits, no Arabic script, no other symbols.
+const SESSION_TTL_MS = 30 * 60 * 1000;
 const ENGLISH_NAME_RE = /^[A-Za-z]+(?:[ '\-][A-Za-z]+)*$/;
 
 function isValidEnglishName(input: string): boolean {
   return ENGLISH_NAME_RE.test(input.trim()) && input.trim().split(/\s+/).length >= 2;
 }
 
-// ─── Main entry point ────────────────────────────────────────────────────────
-export async function processMessage(
-  userId: string,
-  input: string,
-  adapter: BotAdapter,
-  source: BookingSource = BookingSource.whatsapp
-) {
-  const norm  = (input || '').trim();
-  const lower = norm.toLowerCase();
-  const session = await getSession(userId);
-  const isGreeting = TRIGGERS.some(w => lower.includes(w));
-  const isExpired = session && session.expiresAt < new Date();
+function bi(ar: string, en: string): string {
+  return `${ar}\n— — —\n${en}`;
+}
 
-  if (!session || isGreeting || isExpired) {
-    await clearSession(userId);
-    await setSession(userId, 'main_menu', {});
-    return sendMainMenu(userId, adapter);
-  }
+export enum EventType {
+  TEXT, LIST_REPLY, BUTTON_REPLY, POSTBACK, NAVIGATION_SYSTEM, UNKNOWN,
+}
 
-  const data = session.data as BookingData;
+export function determineEventType(input: string, isText: boolean): EventType {
+  if (NAVIGATION_IDS.has(input)) return EventType.NAVIGATION_SYSTEM;
+  if (!isText) return EventType.LIST_REPLY;
+  return EventType.TEXT;
+}
 
-  switch (session.step) {
-    case 'main_menu':      return handleMainMenu(userId, data, norm, adapter);
-    case 'select_doctor':  return handleDoctor(userId, data, norm, adapter);
-    case 'select_service': return handleService(userId, data, norm, adapter);
-    case 'select_date':    return handleDateChoice(userId, data, norm, adapter);
-    case 'select_time':    return handleTime(userId, data, norm, adapter);
-    case 'ask_name':       return handleName(userId, data, norm, adapter);
-    case 'ask_whatsapp':   return handleWhatsapp(userId, data, norm, adapter, source); // Instagram only
-    case 'ask_call_time':  return handleCallTime(userId, data, norm, adapter, source);
-    case 'offers':         return handleOfferAction(userId, data, norm, adapter);
-    default:               return adapter.sendText(userId, MSG.notFound);
+function navigationSection(): ListSection {
+  return {
+    title: bi('التنقل', 'Navigation'),
+    rows: [
+      { id: 'back', title: bi('⬅️ رجوع', '⬅️ Back') },
+      { id: 'main_menu', title: bi('🏠 القائمة الرئيسية', '🏠 Main Menu') },
+      { id: 'cancel', title: bi('❌ إلغاء', '❌ Cancel') },
+    ],
+  };
+}
+
+async function sendTextWithNav(userId: string, text: string, adapter: BotAdapter, cid: string): Promise<void> {
+  await adapter.sendText(userId, text);
+  try {
+    await adapter.sendList(userId, bi('التنقل', 'Navigation'), bi('اختر من القائمة:', 'Choose from the list:'), bi('اختر', 'Choose'), [navigationSection()]);
+  } catch (err) {
+    logger.warn('[Nav] navigation list failed, continuing', { error: String(err), correlationId: cid });
   }
 }
 
-// ─── Menu ─────────────────────────────────────────────────────────────────────
 async function sendMainMenu(userId: string, adapter: BotAdapter) {
-  const sections: ListSection[] = [{ title: 'القائمة / Menu', rows: [
-    { id: 'menu_book',    title: `${MSG.menuOptions.bookAr} / ${MSG.menuOptions.bookEn}` },
-    { id: 'menu_offers',  title: `${MSG.menuOptions.offersAr} / ${MSG.menuOptions.offersEn}` },
-    { id: 'menu_contact', title: `${MSG.menuOptions.contactAr} / ${MSG.menuOptions.contactEn}` },
-  ]}];
-  return adapter.sendList(userId, '🏥 SmartClinic', MSG.welcome(), 'اختر / Choose', sections);
+  const { bookAr, bookEn, offersAr, offersEn, contactAr, contactEn, locationAr, locationEn, myBookingAr, myBookingEn } = MSG.menuOptions;
+  return adapter.sendList(userId, '🏥 SmartClinic', MSG.welcome(), bi('اختر', 'Choose'), [{
+    title: bi('القائمة', 'Menu'),
+    rows: [
+      { id: 'menu_book', title: bi(bookAr, bookEn) },
+      { id: 'menu_my_booking', title: bi(myBookingAr, myBookingEn) },
+      { id: 'menu_offers', title: bi(offersAr, offersEn) },
+      { id: 'menu_location', title: bi(locationAr, locationEn) },
+      { id: 'menu_contact', title: bi(contactAr, contactEn) },
+    ],
+  }]);
 }
 
-async function handleMainMenu(userId: string, data: BookingData, input: string, adapter: BotAdapter) {
-  if (input === 'menu_book') {
-    await setSession(userId, 'select_doctor', data);
-    return sendDoctors(userId, adapter);
-  }
-  if (input === 'menu_offers') {
-    await setSession(userId, 'offers', data);
-    return sendOffers(userId, adapter);
-  }
-  if (input === 'menu_contact') {
-    return adapter.sendText(userId, MSG.contactInfo);
-  }
-  return sendMainMenu(userId, adapter);
+async function sendDoctorsList(userId: string, adapter: BotAdapter) {
+  const doctors = await prisma.doctor.findMany({ where: { isActive: true } });
+  if (!doctors.length) return adapter.sendText(userId, MSG.noDoctors);
+  return adapter.sendList(userId, bi('اختر الطبيب', 'Choose Doctor'), MSG.selectDoctor, bi('اختر', 'Choose'), [
+    { title: bi('الأطباء', 'Doctors'), rows: doctors.map(d => ({
+      id: d.id,
+      title: `د. ${d.nameAr || d.nameEn} / Dr. ${d.nameEn || d.nameAr}`,
+      description: `${d.specialtyAr || ''}${d.specialtyAr && d.specialtyEn ? ' / ' : ''}${d.specialtyEn || ''}`,
+    })) },
+    navigationSection(),
+  ]);
 }
 
-// ─── Offers ───────────────────────────────────────────────────────────────────
-async function sendOffers(userId: string, adapter: BotAdapter) {
-  const offers = await prisma.offer.findMany({
-    where: { isActive: true },
-    orderBy: { createdAt: 'desc' },
-    take: 10,
-  });
-  if (!offers.length) return adapter.sendText(userId, MSG.noOffers);
+async function sendServicesList(userId: string, data: BookingData, adapter: BotAdapter) {
+  return adapter.sendList(userId, `د. ${data.doctorNameAr} / Dr. ${data.doctorNameEn}`, MSG.selectService(data.doctorNameAr!, data.doctorNameEn!), bi('اختر', 'Choose'), [
+    { title: bi('الخدمات', 'Services'), rows: SERVICES_BILINGUAL.map(s => ({ id: s.id, title: bi(s.ar, s.en) })) },
+    navigationSection(),
+  ]);
+}
 
+async function sendDatePicker(userId: string, data: BookingData, adapter: BotAdapter) {
+  const doc = await prisma.doctor.findUnique({ where: { id: data.doctorId! } });
+  if (!doc) return adapter.sendText(userId, MSG.error);
+  const days = await listUpcomingDays(doc, 7);
+  const openDays = days.filter(d => d.availableCount > 0);
+  if (!openDays.length) return adapter.sendText(userId, MSG.noUpcomingAvailability);
+  return adapter.sendList(userId, bi('اختر اليوم', 'Choose Day'), MSG.selectDate, bi('اختر', 'Choose'), [
+    { title: bi('الأيام المتاحة', 'Available Days'), rows: openDays.map(d => ({
+      id: `date_${d.date}`,
+      title: bi(d.labelAr, d.labelEn),
+      description: `${d.availableCount} ${bi(d.availableCount === 1 ? 'موعد' : 'مواعيد', d.availableCount === 1 ? 'slot' : 'slots')}`,
+    })) },
+    navigationSection(),
+  ]);
+}
+
+async function resendStep(userId: string, step: string, data: BookingData, adapter: BotAdapter, cid: string) {
+  switch (step) {
+    case 'main_menu': return sendMainMenu(userId, adapter);
+    case 'select_doctor': return sendDoctorsList(userId, adapter);
+    case 'select_service': return sendServicesList(userId, data, adapter);
+    case 'select_date': return sendDatePicker(userId, data, adapter);
+    case 'select_time': return resendTimePicker(userId, data, adapter, cid);
+    case 'ask_name': return sendTextWithNav(userId, MSG.askName, adapter, cid);
+    case 'ask_whatsapp': return sendTextWithNav(userId, MSG.askWhatsapp, adapter, cid);
+    case 'ask_call_time': return sendCallTimesList(userId, adapter);
+    case 'booking_summary': return sendBookingSummaryScreen(userId, data, adapter);
+    default: return sendMainMenu(userId, adapter);
+  }
+}
+
+async function resendTimePicker(userId: string, data: BookingData, adapter: BotAdapter, cid: string) {
+  const d = data.date ? new Date(data.date) : new Date();
+  const labelAr = d.toLocaleDateString('ar-SA', { weekday: 'long', day: 'numeric', month: 'long' });
+  const labelEn = d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' });
+  const doc = await prisma.doctor.findUnique({ where: { id: data.doctorId! } }).catch(() => null);
+  if (!doc) return adapter.sendText(userId, MSG.error);
+  const { available } = await getAvailableSlots(doc, data.date!).catch(() => ({ available: [] as string[] }));
+  if (!available.length) return sendDatePicker(userId, data, adapter);
+  return adapter.sendList(userId, bi('اختر الوقت', 'Choose Time'), MSG.selectTime(labelAr, labelEn), bi('اختر', 'Choose'), [
+    { title: bi(labelAr, labelEn), rows: available.slice(0, 10).map(t => ({ id: `time_${t}`, title: t })) },
+    navigationSection(),
+  ]);
+}
+
+async function sendCallTimesList(userId: string, adapter: BotAdapter) {
+  return adapter.sendList(userId, bi('أفضل وقت للتواصل', 'Best Time to Call'), MSG.askCallTime, bi('اختر', 'Choose'), [
+    { title: bi('أفضل وقت', 'Best Time'), rows: CALL_TIMES.map(c => ({
+      id: c.id, title: bi(c.titleAr, c.titleEn), description: bi(c.descAr, c.descEn),
+    })) },
+    navigationSection(),
+  ]);
+}
+
+async function sendBookingSummaryScreen(userId: string, data: BookingData, adapter: BotAdapter) {
+  const d = data.date ? new Date(data.date) : new Date();
+  const labelAr = d.toLocaleDateString('ar-SA', { weekday: 'long', day: 'numeric', month: 'long' });
+  const labelEn = d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' });
+  const summary = MSG.bookingSummary(
+    data.name!, data.doctorNameAr!, data.doctorNameEn!,
+    data.serviceAr!, data.serviceEn!,
+    labelAr, labelEn, data.time!,
+    data.callTimeAr!, data.callTimeEn!
+  );
+  return adapter.sendList(userId, bi('ملخص الحجز', 'Booking Summary'), summary, bi('اختر', 'Choose'), [{
+    title: bi('تأكيد الحجز', 'Confirm Booking'),
+    rows: [
+      { id: 'confirm_booking', title: bi('✅ تأكيد الحجز', '✅ Confirm') },
+      { id: 'edit_booking', title: bi('✏️ تعديل الحجز', '✏️ Edit') },
+      { id: 'cancel_booking', title: bi('❌ إلغاء', '❌ Cancel') },
+    ],
+  }]);
+}
+
+async function sendOffersScreen(userId: string, adapter: BotAdapter): Promise<string> {
+  const offers = await prisma.offer.findMany({ where: { isActive: true }, orderBy: { createdAt: 'desc' }, take: 10 });
+  if (!offers.length) {
+    await adapter.sendText(userId, MSG.noOffers);
+    return 'offers';
+  }
   let text = MSG.offersHeaderAr;
   offers.forEach((o, i) => {
     text += `${i + 1}. *${o.titleAr}*\n   ${o.descriptionAr || ''}\n`;
@@ -132,197 +201,354 @@ async function sendOffers(userId: string, adapter: BotAdapter) {
     text += '\n';
   });
   text += MSG.offersFooter;
-
-  const sections: ListSection[] = [{ title: 'الإجراءات / Actions', rows: [
-    { id: 'menu_book', title: '📅 احجز الآن / Book Now' },
-  ]}];
-  return adapter.sendList(userId, '🎁 العروض / Offers', text, 'احجز / Book', sections);
+  await adapter.sendList(userId, bi('العروض', 'Offers'), text, bi('اختر', 'Choose'), [
+    { title: bi('الإجراءات', 'Actions'), rows: [{ id: 'menu_book', title: bi('📅 احجز الآن', '📅 Book Now') }] },
+    navigationSection(),
+  ]);
+  return 'offers';
 }
 
-async function handleOfferAction(userId: string, data: BookingData, _input: string, adapter: BotAdapter) {
-  await setSession(userId, 'select_doctor', data);
-  return sendDoctors(userId, adapter);
+// ─── Phase 4: Command Handler Classes ─────────────────────────────────────────
+
+async function lookupExistingBooking(userId: string): Promise<{ id: string; date: string; time: string; doctor: { nameAr: string; nameEn: string } } | null> {
+  const today = new Date().toISOString().split('T')[0];
+  const phone = userId.replace(/^ig_/, '');
+  const booking = await prisma.booking.findFirst({
+    where: { phone, date: { gte: today }, status: { notIn: ['cancelled', 'completed'] } },
+    orderBy: { date: 'asc' },
+    include: { doctor: { select: { nameAr: true, nameEn: true } } },
+  });
+  if (!booking || !booking.doctor) return null;
+  return { id: booking.id, date: booking.date, time: booking.time, doctor: booking.doctor };
 }
 
-// ─── Doctors ──────────────────────────────────────────────────────────────────
-async function sendDoctors(userId: string, adapter: BotAdapter) {
-  const doctors = await prisma.doctor.findMany({ where: { isActive: true } });
-  if (!doctors.length) return adapter.sendText(userId, MSG.noDoctors);
-
-  const sections: ListSection[] = [{ title: 'الأطباء / Doctors', rows: doctors.map(d => ({
-    id: d.id,
-    title: `د. ${d.nameAr || d.nameEn} / Dr. ${d.nameEn || d.nameAr}`,
-    description: `${d.specialtyAr || ''}${d.specialtyAr && d.specialtyEn ? ' / ' : ''}${d.specialtyEn || ''}`,
-  }))}];
-  return adapter.sendList(userId, '👨‍⚕️ اختر الطبيب / Choose Doctor', MSG.selectDoctor, 'اختر / Choose', sections);
-}
-
-async function handleDoctor(userId: string, data: BookingData, input: string, adapter: BotAdapter) {
-  const doc = await prisma.doctor.findUnique({ where: { id: input } }).catch(() => null);
-  if (!doc) return adapter.sendText(userId, MSG.error);
-  data.doctorId     = doc.id;
-  data.doctorNameAr = doc.nameAr || doc.nameEn;
-  data.doctorNameEn = doc.nameEn || doc.nameAr;
-  await setSession(userId, 'select_service', data);
-
-  const sections: ListSection[] = [{ title: 'الخدمات / Services', rows: SERVICES_BILINGUAL.map(s => ({
-    id: s.id,
-    title: `${s.ar} / ${s.en}`,
-  }))}];
-  return adapter.sendList(
-    userId,
-    `د. ${data.doctorNameAr} / Dr. ${data.doctorNameEn}`,
-    MSG.selectService(data.doctorNameAr!, data.doctorNameEn!),
-    'اختر / Choose',
-    sections
-  );
-}
-
-// ─── Service ──────────────────────────────────────────────────────────────────
-async function handleService(userId: string, data: BookingData, input: string, adapter: BotAdapter) {
-  const svc = SERVICES_BILINGUAL.find(s => s.id === input);
-  if (!svc) return adapter.sendText(userId, MSG.error);
-  data.serviceAr = svc.ar;
-  data.serviceEn = svc.en;
-  await setSession(userId, 'select_date', data);
-  return sendDatePicker(userId, data, adapter);
-}
-
-// ─── Date (click-based — replaces free-text date entry) ──────────────────────
-async function sendDatePicker(userId: string, data: BookingData, adapter: BotAdapter) {
-  const doc = await prisma.doctor.findUnique({ where: { id: data.doctorId! } });
-  if (!doc) return adapter.sendText(userId, MSG.error);
-
-  const days = await listUpcomingDays(doc, 7);
-  const openDays = days.filter(d => d.availableCount > 0);
-
-  if (!openDays.length) return adapter.sendText(userId, MSG.noUpcomingAvailability);
-
-  const sections: ListSection[] = [{ title: 'الأيام المتاحة / Available Days', rows: openDays.map(d => ({
-    id: `date_${d.date}`,
-    title: `${d.labelAr} / ${d.labelEn}`,
-    description: `${d.availableCount} ${d.availableCount === 1 ? 'موعد متاح / slot' : 'مواعيد متاحة / slots'}`,
-  }))}];
-  return adapter.sendList(userId, '📅 اختر اليوم / Choose Day', MSG.selectDate, 'اختر / Choose', sections);
-}
-
-async function handleDateChoice(userId: string, data: BookingData, input: string, adapter: BotAdapter) {
-  if (!input.startsWith('date_')) return adapter.sendText(userId, MSG.error);
-  const date = input.replace('date_', '');
-
-  const doc = await prisma.doctor.findUnique({ where: { id: data.doctorId! } });
-  if (!doc) return adapter.sendText(userId, MSG.error);
-
-  const { available } = await getAvailableSlots(doc, date);
-  if (!available.length) return adapter.sendText(userId, MSG.noSlotsForDay);
-
-  data.date = date;
-  const d = new Date(date);
-  const labelAr = `${d.toLocaleDateString('ar-SA', { weekday: 'long', day: 'numeric', month: 'long' })}`;
-  const labelEn = `${d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' })}`;
-
-  await setSession(userId, 'select_time', data);
-  const sections: ListSection[] = [{ title: `${labelAr} / ${labelEn}`, rows: available.slice(0, 10).map(t => ({
-    id: `time_${t}`,
-    title: t,
-  }))}];
-  return adapter.sendList(userId, '🕐 اختر الوقت / Choose Time', MSG.selectTime(labelAr, labelEn), 'اختر / Choose', sections);
-}
-
-// ─── Time ─────────────────────────────────────────────────────────────────────
-async function handleTime(userId: string, data: BookingData, input: string, adapter: BotAdapter) {
-  if (!input.startsWith('time_')) return adapter.sendText(userId, MSG.error);
-  const t = input.replace('time_', '');
-  if (!/^\d{2}:\d{2}$/.test(t)) return adapter.sendText(userId, MSG.error);
-  data.time = t;
-  await setSession(userId, 'ask_name', data);
-  return adapter.sendText(userId, MSG.askName);
-}
-
-// ─── Name (the ONLY required free-text step — English letters only) ─────────
-async function handleName(userId: string, data: BookingData, input: string, adapter: BotAdapter) {
-  const trimmed = input.trim();
-
-  if (['cancel', 'إلغاء'].includes(trimmed.toLowerCase())) {
-    await clearSession(userId);
-    return adapter.sendText(userId, MSG.cancelled);
-  }
-
-  if (!isValidEnglishName(trimmed)) {
-    // Distinguish "wrong script/characters" from "only one word" so the
-    // patient gets a precise hint instead of a generic error every time.
-    if (!/^[A-Za-z '\-]+$/.test(trimmed)) {
-      return adapter.sendText(userId, MSG.nameInvalidNotEnglish);
+class MainMenuHandler implements MessageHandler {
+  async handle(userId: string, input: string, _data: BookingData, adapter: BotAdapter, _source: BookingSource, _cid: string): Promise<string | undefined> {
+    switch (input) {
+      case 'menu_book': await sendDoctorsList(userId, adapter); return 'select_doctor';
+      case 'menu_offers': return sendOffersScreen(userId, adapter);
+      case 'menu_contact': await adapter.sendText(userId, MSG.contactInfo); return;
+      case 'menu_location': await adapter.sendText(userId, MSG.locationInfo); return;
+      case 'menu_my_booking': {
+        const existing = await lookupExistingBooking(userId);
+        if (!existing) { await adapter.sendText(userId, MSG.noFutureBooking); return; }
+        const docName = `${existing.doctor.nameAr} / ${existing.doctor.nameEn}`;
+        await adapter.sendList(userId, bi('موعدي', 'My Booking'), MSG.existingBookingFound(existing.date, existing.time, docName), bi('اختر', 'Choose'), [
+          {
+            title: bi('الموعد', 'Appointment'),
+            rows: [
+              { id: `cancel_${existing.id}`, title: bi('❌ إلغاء الموعد', '❌ Cancel') },
+              { id: `reschedule_${existing.id}`, title: bi('🔄 تغيير الموعد', '🔄 Reschedule') },
+              { id: 'new_booking', title: bi('📅 حجز جديد', '📅 New Booking') },
+            ],
+          },
+          navigationSection(),
+        ]);
+        return;
+      }
+      case 'new_booking': await sendDoctorsList(userId, adapter); return 'select_doctor';
+      default: {
+        if (input.startsWith('cancel_')) {
+          const bookingId = input.slice(7);
+          try {
+            await prisma.booking.update({
+              where: { id: bookingId },
+              data: { status: 'cancelled', notes: 'Cancelled by patient' },
+            });
+            await adapter.sendText(userId, MSG.cancelledSuccess);
+            await logAudit(AuditAction.BOOKING_CANCELLED, 'Booking', bookingId,
+              { reason: 'cancelled_by_patient' }, { userId, correlationId: _cid }
+            );
+          } catch { await adapter.sendText(userId, MSG.error); }
+          return;
+        }
+        if (input.startsWith('reschedule_')) {
+          const bookingId = input.slice(11);
+          const booking = await prisma.booking.findUnique({ where: { id: bookingId }, include: { doctor: true } });
+          if (!booking || !booking.doctor) { await adapter.sendText(userId, MSG.error); return; }
+          _data.existingBookingId = bookingId;
+          _data.doctorId = booking.doctorId;
+          _data.doctorNameAr = booking.doctor.nameAr || booking.doctor.nameEn;
+          _data.doctorNameEn = booking.doctor.nameEn || booking.doctor.nameAr;
+          _data.serviceAr = booking.service;
+          _data.serviceEn = booking.service;
+          _data.name = booking.name;
+          _data.callTimeAr = '';
+          _data.callTimeEn = '';
+          await sendDatePicker(userId, _data, adapter);
+          return 'select_date';
+        }
+        await adapter.sendText(userId, MSG.pleaseUseButtons); return;
+      }
     }
-    return adapter.sendText(userId, MSG.nameTooShort);
   }
-
-  data.name = trimmed;
-  // Instagram: ask for WhatsApp number next. WhatsApp: go straight to call time.
-  const nextStep = userId.startsWith('ig_') ? 'ask_whatsapp' : 'ask_call_time';
-  await setSession(userId, nextStep, data);
-  if (nextStep === 'ask_whatsapp') return adapter.sendText(userId, MSG.askWhatsapp);
-  return sendCallTimePicker(userId, adapter);
 }
 
-// ─── WhatsApp number (Instagram only — the second required free-text step) ──
-async function handleWhatsapp(userId: string, data: BookingData, input: string, adapter: BotAdapter, source: BookingSource) {
-  // Accept formats: 966501234567 / 0501234567 / +966501234567
-  const cleaned = input.replace(/\D/g, '');
-  if (cleaned.length < 9 || cleaned.length > 15) {
-    return adapter.sendText(userId, MSG.invalidWhatsapp);
+class DoctorHandler implements MessageHandler {
+  async handle(userId: string, input: string, data: BookingData, adapter: BotAdapter, _source: BookingSource, _cid: string): Promise<string | undefined> {
+    const doc = await prisma.doctor.findUnique({ where: { id: input } }).catch(() => null);
+    if (!doc) { await adapter.sendText(userId, MSG.error); return; }
+    data.doctorId = doc.id;
+    data.doctorNameAr = doc.nameAr || doc.nameEn;
+    data.doctorNameEn = doc.nameEn || doc.nameAr;
+    if (data.editReturn) {
+      const ret = data.editReturn; data.editField = undefined; data.editReturn = undefined;
+      await sendBookingSummaryScreen(userId, data, adapter); return ret;
+    }
+    await sendServicesList(userId, data, adapter); return 'select_service';
   }
-  data.whatsappNumber = cleaned.startsWith('966') ? cleaned : cleaned.startsWith('0') ? `966${cleaned.slice(1)}` : `966${cleaned}`;
-  await setSession(userId, 'ask_call_time', data);
-  return sendCallTimePicker(userId, adapter);
 }
 
-// ─── Call time (click-based) ─────────────────────────────────────────────────
-async function sendCallTimePicker(userId: string, adapter: BotAdapter) {
-  const sections: ListSection[] = [{ title: 'أفضل وقت / Best Time', rows: CALL_TIMES.map(c => ({
-    id: c.id,
-    title: `${c.titleAr} / ${c.titleEn}`,
-    description: `${c.descAr} / ${c.descEn}`,
-  }))}];
-  return adapter.sendList(userId, '📞 أفضل وقت للتواصل / Best Time to Call', MSG.askCallTime, 'اختر / Choose', sections);
+class ServiceHandler implements MessageHandler {
+  async handle(userId: string, input: string, data: BookingData, adapter: BotAdapter, _source: BookingSource, _cid: string): Promise<string | undefined> {
+    const svc = SERVICES_BILINGUAL.find(s => s.id === input);
+    if (!svc) { await adapter.sendText(userId, MSG.error); return; }
+    data.serviceAr = svc.ar; data.serviceEn = svc.en;
+    if (data.editReturn) {
+      const ret = data.editReturn; data.editField = undefined; data.editReturn = undefined;
+      await sendBookingSummaryScreen(userId, data, adapter); return ret;
+    }
+    await sendDatePicker(userId, data, adapter); return 'select_date';
+  }
 }
 
-// ─── Call time → Create booking ──────────────────────────────────────────────
-async function handleCallTime(userId: string, data: BookingData, input: string, adapter: BotAdapter, source: BookingSource) {
-  const ct = CALL_TIMES.find(c => c.id === input);
-  if (!ct) return adapter.sendText(userId, MSG.error);
-  data.callTimeAr = ct.titleAr;
-  data.callTimeEn = ct.titleEn;
+class DateHandler implements MessageHandler {
+  async handle(userId: string, input: string, data: BookingData, adapter: BotAdapter, _source: BookingSource, _cid: string): Promise<string | undefined> {
+    if (!input.startsWith('date_')) { await adapter.sendText(userId, MSG.error); return; }
+    const date = input.replace('date_', '');
+    const doc = await prisma.doctor.findUnique({ where: { id: data.doctorId! } });
+    if (!doc) return;
+    const { available } = await getAvailableSlots(doc, date);
+    if (!available.length) { await adapter.sendText(userId, MSG.noSlotsForDay); return; }
+    data.date = date;
+    const d = new Date(date);
+    const labelAr = d.toLocaleDateString('ar-SA', { weekday: 'long', day: 'numeric', month: 'long' });
+    const labelEn = d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' });
+    await adapter.sendList(userId, bi('اختر الوقت', 'Choose Time'), MSG.selectTime(labelAr, labelEn), bi('اختر', 'Choose'), [
+      { title: bi(labelAr, labelEn), rows: available.slice(0, 10).map(t => ({ id: `time_${t}`, title: t })) },
+      navigationSection(),
+    ]);
+    return 'select_time';
+  }
+}
 
+class TimeHandler implements MessageHandler {
+  async handle(userId: string, input: string, data: BookingData, adapter: BotAdapter, _source: BookingSource, cid: string): Promise<string | undefined> {
+    if (!input.startsWith('time_')) { await adapter.sendText(userId, MSG.error); return; }
+    const t = input.replace('time_', '');
+    if (!/^\d{2}:\d{2}$/.test(t)) { await adapter.sendText(userId, MSG.error); return; }
+    data.time = t;
+    if (data.editReturn) {
+      const ret = data.editReturn; data.editField = undefined; data.editReturn = undefined;
+      await sendBookingSummaryScreen(userId, data, adapter); return ret;
+    }
+    await sendTextWithNav(userId, MSG.askName, adapter, cid); return 'ask_name';
+  }
+}
+
+class NameHandler implements MessageHandler {
+  async handle(userId: string, input: string, data: BookingData, adapter: BotAdapter, source: BookingSource, cid: string): Promise<string | undefined> {
+    const trimmed = input.trim();
+    if (!isValidEnglishName(trimmed)) {
+      if (!/^[A-Za-z '\-]+$/.test(trimmed)) { await adapter.sendText(userId, MSG.nameInvalidNotEnglish); }
+      else { await adapter.sendText(userId, MSG.nameTooShort); }
+      return;
+    }
+    data.name = trimmed;
+    if (data.editReturn) {
+      const ret = data.editReturn; data.editField = undefined; data.editReturn = undefined;
+      await sendBookingSummaryScreen(userId, data, adapter); return ret;
+    }
+    const next = source === BookingSource.instagram ? 'ask_whatsapp' : 'ask_call_time';
+    if (next === 'ask_whatsapp') { await sendTextWithNav(userId, MSG.askWhatsapp, adapter, cid); }
+    else { await sendCallTimesList(userId, adapter); }
+    return next;
+  }
+}
+
+class WhatsAppHandler implements MessageHandler {
+  async handle(userId: string, input: string, data: BookingData, adapter: BotAdapter, _source: BookingSource, _cid: string): Promise<string | undefined> {
+    const cleaned = input.replace(/\D/g, '');
+    if (cleaned.length < 9 || cleaned.length > 15) { await adapter.sendText(userId, MSG.invalidWhatsapp); return; }
+    data.whatsappNumber = cleaned.startsWith('966') ? cleaned : cleaned.startsWith('0') ? `966${cleaned.slice(1)}` : `966${cleaned}`;
+    await sendCallTimesList(userId, adapter); return 'ask_call_time';
+  }
+}
+
+class CallTimeHandler implements MessageHandler {
+  async handle(userId: string, input: string, data: BookingData, adapter: BotAdapter, _source: BookingSource, _cid: string): Promise<string | undefined> {
+    const ct = CALL_TIMES.find(c => c.id === input);
+    if (!ct) { await adapter.sendText(userId, MSG.error); return; }
+    data.callTimeAr = ct.titleAr; data.callTimeEn = ct.titleEn;
+    await sendBookingSummaryScreen(userId, data, adapter); return 'booking_summary';
+  }
+}
+
+class OffersHandler implements MessageHandler {
+  async handle(userId: string, input: string, _data: BookingData, adapter: BotAdapter, _source: BookingSource, _cid: string): Promise<string | undefined> {
+    if (input === 'menu_book') { await sendDoctorsList(userId, adapter); return 'select_doctor'; }
+    return;
+  }
+}
+
+class SummaryHandler implements MessageHandler {
+  async handle(userId: string, input: string, data: BookingData, adapter: BotAdapter, _source: BookingSource, cid: string): Promise<string | undefined> {
+    switch (input) {
+      case 'confirm_booking':
+        return 'confirm';
+      case 'cancel_booking':
+        await clearSession(userId);
+        await adapter.sendText(userId, MSG.cancelled);
+        return 'cancelled';
+      case 'edit_booking': {
+        await adapter.sendList(userId, bi('تعديل الحجز', 'Edit Booking'), MSG.bookingEditOptions, bi('اختر', 'Choose'), [
+          { title: bi('اختر للتعديل', 'Choose to Edit'), rows: [
+            { id: 'edit_doctor', title: bi('👨‍⚕️ الطبيب', '👨‍⚕️ Doctor') },
+            { id: 'edit_service', title: bi('💊 الخدمة', '💊 Service') },
+            { id: 'edit_datetime', title: bi('📅 التاريخ والوقت', '📅 Date & Time') },
+            { id: 'edit_name', title: bi('👤 الاسم', '👤 Name') },
+            { id: 'edit_calltime', title: bi('📞 وقت الاتصال', '📞 Call Time') },
+          ]},
+          navigationSection(),
+        ]);
+        return;
+      }
+      default:
+        if (input.startsWith('edit_')) {
+          const targetStep = EDIT_FIELD_MAP[input];
+          if (targetStep) {
+            data.editReturn = 'booking_summary';
+            data.editField = input;
+            await setSession(userId, targetStep, data);
+            await resendStep(userId, targetStep, data, adapter, cid);
+            return '__handled__';
+          }
+        }
+        await sendBookingSummaryScreen(userId, data, adapter);
+        return;
+    }
+  }
+}
+
+const HANDLERS: Record<string, MessageHandler> = {
+  main_menu: new MainMenuHandler(),
+  select_doctor: new DoctorHandler(),
+  select_service: new ServiceHandler(),
+  select_date: new DateHandler(),
+  select_time: new TimeHandler(),
+  ask_name: new NameHandler(),
+  ask_whatsapp: new WhatsAppHandler(),
+  ask_call_time: new CallTimeHandler(),
+  offers: new OffersHandler(),
+  booking_summary: new SummaryHandler(),
+};
+
+// ─── Navigation Handler ──────────────────────────────────────────────────────
+
+async function handleNavigation(
+  userId: string, input: string, currentStep: string,
+  data: BookingData, adapter: BotAdapter, cid: string
+): Promise<boolean> {
+  switch (input) {
+    case 'cancel':
+      await clearSession(userId);
+      await adapter.sendText(userId, MSG.cancelled);
+      return true;
+    case 'main_menu': {
+      data.editReturn = undefined; data.editField = undefined;
+      await setSession(userId, 'main_menu', data);
+      await sendMainMenu(userId, adapter);
+      return true;
+    }
+    case 'back': {
+      const prev = data.previousStep || STEP_ORDER[currentStep] || undefined;
+      if (prev && prev !== currentStep) {
+        data.editReturn = undefined; data.editField = undefined;
+        await setSession(userId, prev, data);
+        await resendStep(userId, prev, data, adapter, cid);
+      } else {
+        await setSession(userId, 'main_menu', data);
+        await sendMainMenu(userId, adapter);
+      }
+      return true;
+    }
+    default:
+      return false;
+  }
+}
+
+async function sendReminderMessage(phone: string, bookingId: string, adapter: BotAdapter): Promise<void> {
   try {
-    // Use WhatsApp number for Instagram users, userId for WhatsApp users
-    const phone = source === BookingSource.instagram && data.whatsappNumber
-      ? data.whatsappNumber
-      : userId;
-
-    const booking = await prisma.booking.create({
-      data: {
-        name:     data.name!,
-        phone,
-        service:  data.serviceAr!,
-        date:     data.date!,
-        time:     data.time!,
-        doctorId: data.doctorId!,
-        source,
-        status:   'confirmed',
-        notes:    `Best time to call: ${data.callTimeEn}${data.whatsappNumber ? ` | WhatsApp: ${data.whatsappNumber}` : ''}`,
-      },
+    const booking = await prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: { doctor: { select: { nameAr: true, nameEn: true } } },
     });
+    if (!booking || !booking.doctor) return;
+    const text = MSG.reminder(
+      booking.name, booking.doctor.nameAr, booking.doctor.nameEn,
+      booking.service, booking.service, booking.date, booking.time
+    );
+    const welcomeText = MSG.preVisitInstructions;
+    await adapter.sendText(phone, text);
+    await adapter.sendText(phone, welcomeText);
+    await prisma.booking.update({ where: { id: bookingId }, data: { reminderSent: true, reminderSentAt: new Date() } });
+  } catch { /* non-fatal */ }
+}
 
-    // Google Calendar sync (non-fatal)
+// ─── Booking Confirmation ────────────────────────────────────────────────────
+
+async function executeBooking(
+  userId: string, data: BookingData, adapter: BotAdapter,
+  source: BookingSource, correlationId: string
+): Promise<{ bookingId: string; created: boolean } | null> {
+  try {
+    // If rescheduling existing booking, update instead of create
+    if (data.existingBookingId) {
+      const updated = await prisma.booking.update({
+        where: { id: data.existingBookingId },
+        data: { date: data.date!, time: data.time! },
+      });
+      await clearSession(userId);
+      const d = new Date(data.date!);
+      const labelAr = d.toLocaleDateString('ar-SA', { weekday: 'long', day: 'numeric', month: 'long' });
+      const labelEn = d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' });
+      await adapter.sendText(userId, MSG.confirmationSummary(
+        data.name!, data.doctorNameAr!, data.doctorNameEn!,
+        data.serviceAr!, data.serviceEn!,
+        labelAr, labelEn, data.time!,
+        data.callTimeAr!, data.callTimeEn!
+      ));
+      try {
+        const { updateCalendarEvent } = await import('./googleCalendar');
+        const doc = await prisma.doctor.findUnique({ where: { id: data.doctorId! } });
+        if (doc) await updateCalendarEvent(updated, doc);
+      } catch { /* non-fatal */ }
+      return { bookingId: data.existingBookingId, created: false };
+    }
+
+    const result = await createBookingIdempotent(userId, data, source, correlationId);
+
     try {
       const doc = await prisma.doctor.findUnique({ where: { id: data.doctorId! } });
-      if (doc) {
-        const { createCalendarEvent } = await import('./googleCalendar');
-        const cal = await createCalendarEvent(booking, doc);
-        if (cal) await prisma.booking.update({ where: { id: booking.id }, data: { ...cal, calendarSynced: true } });
+      if (doc && result) {
+        const fullBooking = await prisma.booking.findUnique({ where: { id: result.bookingId } });
+        if (fullBooking) {
+          const { createCalendarEvent } = await import('./googleCalendar');
+          const cal = await createCalendarEvent(fullBooking, doc);
+          if (cal) await prisma.booking.update({ where: { id: fullBooking.id }, data: { ...cal, calendarSynced: true } });
+        }
       }
     } catch { /* non-fatal */ }
+
+    // Auto-send reminder for same-day or next-day bookings
+    if (data.date) {
+      const bookingDate = new Date(data.date);
+      const now = new Date();
+      const diffDays = Math.floor((bookingDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      if (diffDays <= 1 && result?.bookingId) {
+        sendReminderMessage(userId, result.bookingId, adapter).catch(() => {});
+      }
+    }
 
     await clearSession(userId);
 
@@ -330,17 +556,258 @@ async function handleCallTime(userId: string, data: BookingData, input: string, 
     const labelAr = d.toLocaleDateString('ar-SA', { weekday: 'long', day: 'numeric', month: 'long' });
     const labelEn = d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' });
 
-    const summary = MSG.confirmationSummary(
+    // Send confirmation with pre-visit instructions
+    await adapter.sendText(userId, MSG.confirmationSummary(
       data.name!, data.doctorNameAr!, data.doctorNameEn!,
       data.serviceAr!, data.serviceEn!,
       labelAr, labelEn, data.time!,
       data.callTimeAr!, data.callTimeEn!
-    );
-    return adapter.sendText(userId, summary);
+    ));
+    await adapter.sendText(userId, MSG.preVisitInstructions);
+
+    return result;
   } catch (err: unknown) {
-    const e = err as { code?: string };
-    if (e.code === 'P2002') return adapter.sendText(userId, MSG.slotTaken);
-    console.error('Bot booking error:', err);
-    return adapter.sendText(userId, MSG.error);
+    const e = err as { code?: string; message?: string };
+    if (e.message?.includes('already in progress')) {
+      logger.warn('[Booking] Confirmation already in progress', { userId, correlationId });
+      await adapter.sendText(userId, MSG.slotTaken);
+      return null;
+    }
+    logger.error('[Booking] Confirmation failed', { error: String(err), userId, correlationId });
+    await adapter.sendText(userId, MSG.error);
+    return null;
+  }
+}
+
+// ─── Main Entry Point ────────────────────────────────────────────────────────
+
+export async function processMessage(
+  userId: string,
+  input: string,
+  adapter: BotAdapter,
+  source: BookingSource = BookingSource.whatsapp,
+  isText = true,
+  correlationId?: string,
+  messageId?: string,
+  webhookId?: string,
+) {
+  const startTime = Date.now();
+  const cid = correlationId || 'no-cid';
+  const normInput = input.trim();
+  const eventType = determineEventType(normInput, isText);
+  const conversationId = `conv_${userId}`;
+
+  logger.info('[Engine] processMessage', {
+    userId, input: normInput, isText, eventType: EventType[eventType],
+    source, correlationId: cid, messageId, webhookId,
+  });
+
+  // Track event
+  const track = (overrides: Partial<Parameters<typeof trackEvent>[0]>) => {
+    trackEvent({
+      conversationId,
+      userId,
+      platform: source,
+      eventType: EventType[eventType],
+      payloadId: normInput,
+      isText,
+      correlationId: cid,
+      messageId,
+      webhookId,
+      ...overrides,
+    }).catch(() => {});
+  };
+
+  try {
+    // Retry loop for concurrency conflicts (Phase 3)
+    let lastError: Error | null = null;
+    let session: SessionResult | null = null;
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        session = await getSession(userId);
+        break;
+      } catch (err) {
+        lastError = err as Error;
+        logger.warn('[Engine] Session read error, retrying', {
+          error: String(err), attempt, correlationId: cid,
+        });
+        await new Promise(r => setTimeout(r, 100 * Math.pow(2, attempt)));
+      }
+    }
+    if (!session && lastError) {
+      throw lastError;
+    }
+
+    // ── No session ──
+    if (!session) {
+      const isGreeting = isText && TRIGGERS.some(t => normInput.toLowerCase() === t.toLowerCase());
+      if (isGreeting || eventType === EventType.NAVIGATION_SYSTEM) {
+        await setSession(userId, 'main_menu', {});
+        await sendMainMenu(userId, adapter);
+        metrics.conversationsStarted.inc();
+        track({ currentState: 'main_menu', success: true, executionTimeMs: Date.now() - startTime });
+        logger.info('[Engine] new session', { userId, duration: Date.now() - startTime, correlationId: cid });
+        return;
+      }
+      await adapter.sendText(userId, MSG.notFound);
+      track({ success: true, executionTimeMs: Date.now() - startTime });
+      logger.info('[Engine] no session', { userId, duration: Date.now() - startTime, correlationId: cid });
+      return;
+    }
+
+    const step = session.step as string;
+    const data: BookingData = session.data || {};
+
+    logger.debug('[Engine] routing', { userId, step, input: normInput, sessionVersion: session.sessionVersion, correlationId: cid });
+
+    // ── Navigation ──
+    if (eventType === EventType.NAVIGATION_SYSTEM) {
+      const handled = await handleNavigation(userId, normInput, step, data, adapter, cid);
+      if (handled) {
+        track({
+          currentState: step, previousState: step, eventType: 'NAVIGATION',
+          success: true, executionTimeMs: Date.now() - startTime,
+        });
+        logger.info('[Engine] navigation', { userId, input: normInput, step, duration: Date.now() - startTime, correlationId: cid });
+        return;
+      }
+    }
+
+    // ── Summary handler (booking_summary is special) ──
+    if (step === 'booking_summary') {
+      const handler = new SummaryHandler();
+      const result = await handler.handle(userId, normInput, data, adapter, source, cid);
+
+      if (result === 'confirm') {
+        const bookingResult = await executeBooking(userId, data, adapter, source, cid);
+        if (bookingResult?.created) {
+          metrics.bookingsCreated.inc();
+          metrics.conversationsCompleted.inc();
+        } else if (!bookingResult) {
+          metrics.bookingsFailed.inc();
+        }
+        track({
+          currentState: 'booking_summary', previousState: step, success: bookingResult !== null,
+          bookingCreated: bookingResult?.created ?? false,
+          bookingId: bookingResult?.bookingId,
+          executionTimeMs: Date.now() - startTime,
+        });
+        logger.info('[Engine] booking confirmed', { userId, bookingResult, duration: Date.now() - startTime, correlationId: cid });
+        return;
+      }
+      if (result === 'cancelled') {
+        track({
+          currentState: 'cancelled', previousState: step, bookingCancelled: true,
+          success: true, executionTimeMs: Date.now() - startTime,
+        });
+        return;
+      }
+      if (result === '__handled__') {
+        track({
+          currentState: step, previousState: step, success: true,
+          executionTimeMs: Date.now() - startTime,
+        });
+        return;
+      }
+      track({
+        currentState: 'booking_summary', previousState: step, success: true,
+        executionTimeMs: Date.now() - startTime,
+      });
+      return;
+    }
+
+    // ── TEXT in non-text step ──
+    if (eventType === EventType.TEXT && !['ask_name', 'ask_whatsapp'].includes(step)) {
+      const isGreeting = TRIGGERS.some(t => normInput.toLowerCase() === t.toLowerCase());
+      if (isGreeting) {
+        await setSession(userId, 'main_menu', {});
+        await sendMainMenu(userId, adapter);
+        track({ currentState: 'main_menu', previousState: step, success: true, executionTimeMs: Date.now() - startTime });
+        logger.info('[Engine] greeting, restarted', { userId, duration: Date.now() - startTime, correlationId: cid });
+        return;
+      }
+      await adapter.sendText(userId, MSG.pleaseUseButtons);
+      track({ currentState: step, previousState: step, success: true, executionTimeMs: Date.now() - startTime });
+      return;
+    }
+
+    // ── Route to handler ──
+    const handler = HANDLERS[step];
+    if (!handler) {
+      logger.warn('[Engine] unknown step', { userId, step, correlationId: cid });
+      await clearSession(userId);
+      await adapter.sendText(userId, MSG.error);
+      track({ currentState: step, success: false, errorMessage: `Unknown step: ${step}`, executionTimeMs: Date.now() - startTime });
+      return;
+    }
+
+    let nextStep: string | undefined;
+    try {
+      nextStep = await handler.handle(userId, normInput, data, adapter, source, cid);
+    } catch (err) {
+      logger.error('[Engine] handler error', { error: String(err), step, userId, correlationId: cid });
+      await adapter.sendText(userId, MSG.error);
+      track({ currentState: step, success: false, errorMessage: String(err), executionTimeMs: Date.now() - startTime });
+      return;
+    }
+
+    // ── Update session with optimistic locking ──
+    try {
+      if (nextStep && nextStep !== '__handled__') {
+        data.previousStep = step;
+        await setSession(userId, nextStep, data, session.sessionVersion);
+        logger.info('[Engine] transition', {
+          userId, from: step, to: nextStep, version: session.sessionVersion,
+          duration: Date.now() - startTime, correlationId: cid,
+        });
+      } else {
+        await setSession(userId, step, data, session.sessionVersion);
+        logger.info('[Engine] stay', {
+          userId, step, version: session.sessionVersion,
+          duration: Date.now() - startTime, correlationId: cid,
+        });
+      }
+      track({
+        currentState: nextStep || step, previousState: step,
+        success: true, executionTimeMs: Date.now() - startTime,
+      });
+    } catch (err) {
+      if (err instanceof ConcurrencyError) {
+        logger.warn('[Engine] session version conflict', {
+          userId, step, expected: err.expectedVersion, actual: err.actualVersion,
+          correlationId: cid,
+        });
+        // Re-read session and re-process (recursive guard: only 1 retry)
+        logger.info('[Engine] retrying with fresh session', { userId, correlationId: cid });
+        const freshSession = await getSession(userId);
+        if (freshSession) {
+          const freshData = freshSession.data as BookingData;
+          Object.assign(data, freshData);
+          await setSession(userId, nextStep || step, data, freshSession.sessionVersion);
+          logger.info('[Engine] resolved conflict', { userId, step, newVersion: freshSession.sessionVersion + 1, correlationId: cid });
+        }
+        track({
+          currentState: nextStep || step, previousState: step,
+          success: true, executionTimeMs: Date.now() - startTime,
+        });
+      } else {
+        logger.error('[Engine] session write error', {
+          error: String(err), userId, step, correlationId: cid,
+        });
+        track({
+          currentState: step, success: false,
+          errorMessage: String(err), executionTimeMs: Date.now() - startTime,
+        });
+      }
+    }
+  } catch (err) {
+    logger.error('[Engine] fatal error', {
+      error: String(err), userId, correlationId: cid,
+    });
+    track({ success: false, errorMessage: String(err), executionTimeMs: Date.now() - startTime });
+    try {
+      await adapter.sendText(userId, MSG.error);
+    } catch { /* last resort */ }
   }
 }

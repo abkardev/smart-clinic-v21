@@ -1,9 +1,10 @@
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
 import { apiResponse, toDbStatus } from '@/app/lib/apiResponse';
-import { logAudit, auditOptsFromRequest } from '@/app/lib/audit';
+import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
 import type { BookingStatus, BookingSource } from '@prisma/client';
 
 const doctorSelect = {
@@ -41,6 +42,7 @@ export async function PUT(
 ) {
   try {
     const body = await req.json() as BookingBody;
+    const before = await prisma.booking.findUnique({ where: { id: params.id } });
     const booking = await prisma.booking.update({
       where: { id: params.id },
       data: {
@@ -65,8 +67,17 @@ export async function PUT(
       } catch { /* non-fatal */ }
     }
 
-    await logAudit('UPDATE_BOOKING', 'Booking', params.id,
-      { updatedFields: Object.keys(body).filter(k => body[k as keyof BookingBody] !== undefined), status: booking.status },
+    const changes: Record<string, { before: unknown; after: unknown }> = {};
+    if (before) {
+      for (const key of ['name', 'phone', 'service', 'date', 'time', 'status', 'notes', 'source'] as const) {
+        if (body[key as keyof BookingBody] !== undefined && booking[key] !== before[key as keyof typeof before]) {
+          changes[key] = { before: before[key as keyof typeof before], after: booking[key] };
+        }
+      }
+    }
+
+    await logAudit(AuditAction.BOOKING_UPDATED, 'Booking', params.id,
+      { changes, status: booking.status },
       auditOptsFromRequest(req)
     );
     const { doctor, ...rest } = booking;
@@ -98,7 +109,7 @@ export async function DELETE(
     }
 
     await prisma.booking.delete({ where: { id: params.id } });
-    await logAudit('DELETE_BOOKING', 'Booking', params.id,
+    await logAudit(AuditAction.BOOKING_DELETED, 'Booking', params.id,
       { name: booking.name, date: booking.date, time: booking.time },
       auditOptsFromRequest(req)
     );

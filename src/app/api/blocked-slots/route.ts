@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
 import { getAuthUser, requireRole } from '@/app/lib/auth';
-import { logAudit, auditOptsFromRequest } from '@/app/lib/audit';
+import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
 
 // GET /api/blocked-slots
 export async function GET(req: NextRequest) {
@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
       console.error('Google Calendar block sync failed:', (gErr as Error).message);
     }
 
-    await logAudit('BLOCK_SLOT', 'BlockedSlot', slot.id, { doctorId, date, time, reason }, auditOptsFromRequest(req, user!));
+    await logAudit(AuditAction.SLOT_BLOCKED, 'BlockedSlot', slot.id, { doctorId, date, time, reason }, auditOptsFromRequest(req, user!));
     return NextResponse.json(slot, { status: 201 });
   } catch (err: unknown) {
     const e = err as { code?: string; message?: string };

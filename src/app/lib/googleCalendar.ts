@@ -1,5 +1,6 @@
 import { google } from './google';
 import type { Booking, Doctor } from '@prisma/client';
+import { metrics } from './metrics';
 
 interface CalendarResult {
   calendarEventId: string;
@@ -14,6 +15,7 @@ export async function createCalendarEvent(
     const startDT = new Date(`${booking.date}T${booking.time}:00`);
     const endDT = new Date(startDT.getTime() + doctor.slotDuration * 60000);
 
+    const start = Date.now();
     const event = await google.events.insert({
       calendarId: doctor.calendarId,
       requestBody: {
@@ -23,6 +25,7 @@ export async function createCalendarEvent(
         end:   { dateTime: endDT.toISOString(), timeZone: 'Asia/Riyadh' },
       },
     });
+    metrics.googleCalendarLatency.observe(Date.now() - start);
 
     return {
       calendarEventId: event.data.id ?? '',
@@ -40,6 +43,7 @@ export async function updateCalendarEvent(
 ): Promise<void> {
   if (!booking.calendarEventId) return;
   try {
+    const start = Date.now();
     const startDT = new Date(`${booking.date}T${booking.time}:00`);
     const endDT = new Date(startDT.getTime() + doctor.slotDuration * 60000);
 
@@ -53,6 +57,7 @@ export async function updateCalendarEvent(
         end:   { dateTime: endDT.toISOString(), timeZone: 'Asia/Riyadh' },
       },
     });
+    metrics.googleCalendarLatency.observe(Date.now() - start);
   } catch (err) {
     console.error('Google Calendar updateEvent failed:', (err as Error).message);
   }

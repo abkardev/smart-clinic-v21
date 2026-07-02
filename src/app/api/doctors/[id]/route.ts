@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
 import { getAuthUser } from '@/app/lib/auth';
-import { logAudit, auditOptsFromRequest } from '@/app/lib/audit';
+import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
 
 interface DoctorBody {
   nameEn?: string; nameAr?: string;
@@ -75,7 +75,7 @@ export async function PUT(
       }
     }
 
-    await logAudit('UPDATE_DOCTOR', 'Doctor', doctor.id,
+    await logAudit(AuditAction.DOCTOR_UPDATED, 'Doctor', doctor.id,
       { nameEn: doctor.nameEn, changes: changed },
       auditOptsFromRequest(req, user!)
     );
@@ -99,7 +99,7 @@ export async function DELETE(
     const before = await prisma.doctor.findUnique({ where: { id: params.id } });
     await prisma.doctor.update({ where: { id: params.id }, data: { isActive: false } });
 
-    await logAudit('DEACTIVATE_DOCTOR', 'Doctor', params.id,
+    await logAudit(AuditAction.DOCTOR_DEACTIVATED, 'Doctor', params.id,
       { nameEn: before?.nameEn, nameAr: before?.nameAr },
       auditOptsFromRequest(req, user!)
     );

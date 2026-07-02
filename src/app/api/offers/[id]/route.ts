@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { deleteOfferImage } from '@/app/lib/offerStorage';
 import { prisma } from '@/app/lib/prisma';
 import { getAuthUser, requireRole } from '@/app/lib/auth';
-import { logAudit, auditOptsFromRequest } from '@/app/lib/audit';
+import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
 
 interface OfferBody {
   titleEn?: string; titleAr?: string;
@@ -35,7 +35,7 @@ export async function PUT(
         ...(body.isActive      !== undefined && { isActive: body.isActive }),
       },
     });
-    await logAudit('UPDATE_OFFER', 'Offer', offer.id, { titleEn: offer.titleEn }, auditOptsFromRequest(req, user!));
+    await logAudit(AuditAction.OFFER_UPDATED, 'Offer', offer.id, { titleEn: offer.titleEn }, auditOptsFromRequest(req, user!));
     return NextResponse.json(offer);
   } catch (err: unknown) {
     const e = err as { code?: string; message?: string };
@@ -62,7 +62,7 @@ export async function DELETE(
     // deployed on, without any code change.
     await deleteOfferImage(offer.imageUrl);
 
-    await logAudit('DELETE_OFFER', 'Offer', params.id, null, auditOptsFromRequest(req, user!));
+    await logAudit(AuditAction.OFFER_DELETED, 'Offer', params.id, null, auditOptsFromRequest(req, user!));
     return NextResponse.json({ message: 'Offer deleted' });
   } catch (err: unknown) {
     const e = err as { code?: string };

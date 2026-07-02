@@ -1,19 +1,9 @@
-// Shared bilingual (Arabic + English) messages for the WhatsApp + Instagram
-// bots. Every message shows Arabic first, then English, separated by a
-// divider line — this is the project's chosen bilingual format.
-//
-// DESIGN RULE: the booking flow is click-only. The patient never has to
-// type anything except their full name (English letters only) and, on
-// Instagram, their WhatsApp number. Every other step is an interactive
-// list the patient taps.
-
 export const CALL_TIMES = [
   { id: 'call_morning', titleAr: '🌅 الصباح',  titleEn: 'Morning',  descAr: '٨ ص – ١٢ م',  descEn: '8 AM – 12 PM' },
   { id: 'call_noon',    titleAr: '☀️ الظهيرة', titleEn: 'Afternoon', descAr: '١٢ م – ٤ م',  descEn: '12 PM – 4 PM' },
   { id: 'call_evening', titleAr: '🌆 المساء',  titleEn: 'Evening',   descAr: '٤ م – ٨ م',   descEn: '4 PM – 8 PM' },
 ];
 
-// Bilingual service catalogue — id is what gets stored, labels are shown.
 export const SERVICES_BILINGUAL = [
   { id: 'svc_general',    ar: 'استشارة عامة',          en: 'General Consultation' },
   { id: 'svc_followup',   ar: 'مراجعة',                en: 'Follow-up' },
@@ -32,11 +22,13 @@ export interface BookingData {
   name?: string;
   callTimeAr?: string;
   callTimeEn?: string;
-  whatsappNumber?: string; // Instagram only
+  whatsappNumber?: string;
+  previousStep?: string;
+  editReturn?: string;
+  editField?: string;
+  existingBookingId?: string;
 }
 
-// Joins an Arabic line and an English line with a divider, the project's
-// chosen bilingual message format.
 function bi(ar: string, en: string): string {
   return `${ar}\n— — —\n${en}`;
 }
@@ -104,6 +96,35 @@ export const MSG = {
     '⚠️ Invalid WhatsApp number. Please enter numbers only, e.g. 0501234567'
   ),
 
+  bookingSummary: (
+    name: string, doctorAr: string, doctorEn: string,
+    serviceAr: string, serviceEn: string,
+    dateLabelAr: string, dateLabelEn: string, time: string,
+    callAr: string, callEn: string
+  ) => bi(
+    `📋 *ملخص الحجز*\n\n` +
+    `👤 *الاسم:* ${name}\n` +
+    `👨‍⚕️ *الطبيب:* د. ${doctorAr}\n` +
+    `💊 *الخدمة:* ${serviceAr}\n` +
+    `📅 *التاريخ:* ${dateLabelAr}\n` +
+    `🕐 *الوقت:* ${time}\n` +
+    `📞 *وقت الاتصال:* ${callAr}\n\n` +
+    `اختر من الأسفل:`,
+    `📋 *Booking Summary*\n\n` +
+    `👤 *Name:* ${name}\n` +
+    `👨‍⚕️ *Doctor:* Dr. ${doctorEn}\n` +
+    `💊 *Service:* ${serviceEn}\n` +
+    `📅 *Date:* ${dateLabelEn}\n` +
+    `🕐 *Time:* ${time}\n` +
+    `📞 *Call Time:* ${callEn}\n\n` +
+    `Choose below:`
+  ),
+
+  bookingEditOptions: bi(
+    'اختر الحقل الذي تريد تعديله:',
+    'Choose the field you want to edit:'
+  ),
+
   confirmationSummary: (
     name: string, doctorAr: string, doctorEn: string,
     serviceAr: string, serviceEn: string,
@@ -169,6 +190,16 @@ export const MSG = {
     '😔 No offers available right now. Stay tuned!'
   ),
 
+  pleaseUseButtons: bi(
+    'يرجى استخدام الأزرار أدناه للمتابعة.',
+    'Please use the buttons below to continue.'
+  ),
+
+  sessionExpired: bi(
+    '⏰ انتهت صلاحية الجلسة. تم حفظ المسودة. أرسل *مرحبا* للبدء من جديد.',
+    '⏰ Session expired. Draft saved. Send *hello* to start a new booking.'
+  ),
+
   offersHeaderAr: '🎁 *عروضنا الحالية:*\n\n',
   offersHeaderEn: '🎁 *Our Current Offers:*\n\n',
   offersFooter: bi(
@@ -180,17 +211,86 @@ export const MSG = {
     bookAr: '📅 حجز موعد',     bookEn: 'Book Appointment',
     offersAr: '🎁 العروض',     offersEn: 'Offers',
     contactAr: '📞 تواصل معنا', contactEn: 'Contact Us',
+    locationAr: '📍 موقع العيادة', locationEn: 'Clinic Location',
+    myBookingAr: '🔍 موعدي', myBookingEn: 'My Booking',
   },
 
   contactInfo: bi(
-    '📞 *تواصل معنا*\n☎️ هاتف: 920XXXXXXX\n✉️ info@smartclinic.sa\nأوقات العمل: الأحد – الخميس، ٩ ص – ٥ م',
-    '📞 *Contact Us*\n☎️ Phone: 920XXXXXXX\n✉️ info@smartclinic.sa\nWorking hours: Sun – Thu, 9 AM – 5 PM'
+    '📞 *تواصل معنا*\n☎️ هاتف: 920XXXXXXX\n✉️ info@smartclinic.sa\n📍 *الموقع:* https://maps.google.com/?q=SmartClinic+Riyadh\nأوقات العمل: الأحد – الخميس، ٩ ص – ٥ م',
+    '📞 *Contact Us*\n☎️ Phone: 920XXXXXXX\n✉️ info@smartclinic.sa\n📍 *Location:* https://maps.google.com/?q=SmartClinic+Riyadh\nWorking hours: Sun – Thu, 9 AM – 5 PM'
+  ),
+
+  locationInfo: bi(
+    '📍 *موقع العيادة*\n🏥 *SmartClinic*\n📌 حي العليا، شارع الإمام سعود بن عبدالعزيز\n📍 https://maps.google.com/?q=SmartClinic+Riyadh\n\nأوقات العمل:\nالأحد – الخميس: ٩ ص – ٥ م\nالجمعة – السبت: مغلق',
+    '📍 *Clinic Location*\n🏥 *SmartClinic*\n📌 Al Olaya District, Imam Saud bin Abdulaziz Road\n📍 https://maps.google.com/?q=SmartClinic+Riyadh\n\nWorking hours:\nSunday – Thursday: 9 AM – 5 PM\nFriday – Saturday: Closed'
+  ),
+
+  preVisitInstructions: bi(
+    '📋 *تعليمات ما قبل الزيارة*\n\n• يرجى الحضور قبل الموعد بـ ١٠ دقائق\n• أحضر هويتك الشخصية\n• أحضر أي تقارير طبية سابقة أو تحاليل\n• إذا كان موعدك لتحاليل، يرجى الصيام ٨ ساعات قبل الموعد',
+    '📋 *Pre-Visit Instructions*\n\n• Please arrive 10 minutes before your appointment\n• Bring your ID\n• Bring any previous medical reports or test results\n• If your appointment is for lab tests, please fast for 8 hours prior'
+  ),
+
+  // ── Patient Self-Service ───────────────────────────────────────────────────
+  existingBookingFound: (date: string, time: string, doctor: string) =>
+    bi(
+      `👋 *مرحباً بعودتك!*\nلديك موعد قادم:\n📅 ${date}\n🕐 ${time}\n👨‍⚕️ د. ${doctor}\n\nماذا تريد أن تفعل؟`,
+      `👋 *Welcome back!*\nYou have an upcoming appointment:\n📅 ${date}\n🕐 ${time}\n👨‍⚕️ Dr. ${doctor}\n\nWhat would you like to do?`
+    ),
+
+  cancelConfirm: bi(
+    'هل أنت متأكد من إلغاء الموعد؟',
+    'Are you sure you want to cancel this appointment?'
+  ),
+
+  cancelledSuccess: bi(
+    '✅ *تم إلغاء الموعد بنجاح.*\nيمكنك حجز موعد جديد في أي وقت بإرسال *مرحبا*.',
+    '✅ *Appointment cancelled successfully.*\nYou can book a new appointment anytime by sending *hello*.'
+  ),
+
+  rescheduleSelectDate: bi(
+    '📅 *اختر اليوم الجديد لموعدك:*',
+    '📅 *Choose your new appointment day:*'
+  ),
+
+  noFutureBooking: bi(
+    'ليس لديك أي مواعيد قادمة.\nأرسل *مرحبا* لحجز موعد جديد.',
+    'You have no upcoming appointments.\nSend *hello* to book a new appointment.'
+  ),
+
+  myBookingCancelled: bi(
+    'تم إلغاء الموعد من قبل المريض',
+    'Booking cancelled by patient'
   ),
 };
 
-// Greeting triggers — case-insensitive substring match against the raw
-// incoming message. Covers Arabic and English greetings/booking intents.
 export const TRIGGERS = [
   'مرحبا', 'مرحباً', 'احجز', 'هلا', 'السلام عليكم', 'اهلا', 'أهلا', 'رئيسية',
   'hi', 'hello', 'hey', 'start', 'book', 'menu',
 ];
+
+export const NAVIGATION_IDS = new Set(['back', 'main_menu', 'cancel']);
+
+export const SUMMARY_IDS = new Set([
+  'confirm_booking', 'edit_booking', 'cancel_booking',
+  'edit_doctor', 'edit_service', 'edit_datetime', 'edit_name', 'edit_calltime',
+]);
+
+export const STEP_ORDER: Record<string, string> = {
+  main_menu: '',
+  select_doctor: 'main_menu',
+  select_service: 'select_doctor',
+  select_date: 'select_service',
+  select_time: 'select_date',
+  ask_name: 'select_time',
+  ask_whatsapp: 'ask_name',
+  ask_call_time: 'ask_name',
+  booking_summary: 'ask_call_time',
+};
+
+export const EDIT_FIELD_MAP: Record<string, string> = {
+  edit_doctor: 'select_doctor',
+  edit_service: 'select_service',
+  edit_datetime: 'select_date',
+  edit_name: 'ask_name',
+  edit_calltime: 'ask_call_time',
+};

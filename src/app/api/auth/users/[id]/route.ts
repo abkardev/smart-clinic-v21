@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
 import { getAuthUser, requireRole } from '@/app/lib/auth';
-import { logAudit, auditOptsFromRequest } from '@/app/lib/audit';
+import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
 
 // DELETE /api/auth/users/[id]
 export async function DELETE(
@@ -20,7 +20,7 @@ export async function DELETE(
     if (!target) return NextResponse.json({ message: 'User not found' }, { status: 404 });
 
     await prisma.user.delete({ where: { id: params.id } });
-    await logAudit('DELETE_USER', 'User', params.id, { targetUser: target.email }, auditOptsFromRequest(req, user!));
+    await logAudit(AuditAction.USER_DELETED, 'User', params.id, { targetUser: target.email }, auditOptsFromRequest(req, user!));
 
     return NextResponse.json({ message: 'User deleted' });
   } catch (err) {

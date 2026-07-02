@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
 import { getAuthUser, requireRole } from '@/app/lib/auth';
-import { logAudit, auditOptsFromRequest } from '@/app/lib/audit';
+import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
 import { UserRole } from '@prisma/client';
 
 // PATCH /api/auth/users/[id]/role
@@ -39,8 +39,7 @@ export async function PATCH(
       },
     });
 
-    await logAudit(
-      'UPDATE_USER_ROLE', 'User', params.id,
+    await logAudit(AuditAction.USER_ROLE_CHANGED, 'User', params.id,
       { newRole: role, oldRole: target.role, targetUser: target.email },
       auditOptsFromRequest(req, user!)
     );
