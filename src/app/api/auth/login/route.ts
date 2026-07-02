@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
 import { signToken, comparePassword } from '@/app/lib/auth';
-import { logAudit } from '@/app/lib/audit';
+import { logAudit, AuditAction} from '@/app/lib/audit';
 import { checkRateLimit } from '@/app/lib/rateLimit';
 
 export async function POST(req: NextRequest) {
