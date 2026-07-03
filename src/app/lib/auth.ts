@@ -2,15 +2,21 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from './prisma';
+import { required } from './env';
 
-const JWT_SECRET: string = (() => {
-  const val = process.env.JWT_SECRET;
-  if (!val) throw new Error('JWT_SECRET environment variable is not set');
-  return val;
-})();
+const JWT_SECRET = required('JWT_SECRET');
 
 export function signToken(userId: string): string {
   return jwt.sign({ id: userId }, JWT_SECRET, { expiresIn: '7d' });
+}
+
+function isIdPayload(obj: unknown): obj is { id: string } {
+  return (
+    typeof obj === 'object' &&
+    obj !== null &&
+    'id' in obj &&
+    typeof (obj as Record<string, unknown>).id === 'string'
+  );
 }
 
 export function verifyToken(token: string): { id: string } {
@@ -18,8 +24,8 @@ export function verifyToken(token: string): { id: string } {
   if (typeof decoded === 'string') {
     return { id: decoded };
   }
-  if (typeof decoded === 'object' && decoded !== null && 'id' in decoded) {
-    return { id: (decoded as { id: unknown }).id as string };
+  if (isIdPayload(decoded)) {
+    return { id: decoded.id };
   }
   throw new Error('Invalid token payload');
 }

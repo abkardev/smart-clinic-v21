@@ -11,10 +11,13 @@ import { isDuplicateMessage } from '@/app/lib/duplicateGuard';
 import { fetchWithRetry } from '@/app/lib/retry';
 import { trackEvent } from '@/app/lib/conversationTracker';
 import { metrics } from '@/app/lib/metrics';
+import { required } from '@/app/lib/env';
+
+const INSTAGRAM_TOKEN = required('INSTAGRAM_TOKEN');
 
 const IG_URL = () => `https://graph.facebook.com/v21.0/me/messages`;
 const IG_HEADERS = () => ({
-  Authorization: `Bearer ${process.env.INSTAGRAM_TOKEN}`,
+  Authorization: `Bearer ${INSTAGRAM_TOKEN}`,
   'Content-Type': 'application/json',
 });
 

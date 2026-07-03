@@ -1,8 +1,15 @@
 const LOG_LEVELS = { trace: -1, debug: 0, info: 1, warn: 2, error: 3 } as const;
 type Level = keyof typeof LOG_LEVELS;
 
-const currentLevel: Level =
-  (process.env.LOG_LEVEL as Level) || (process.env.NODE_ENV === 'production' ? 'info' : 'debug');
+function isValidLevel(s: string): s is Level {
+  return s in LOG_LEVELS;
+}
+
+const currentLevel: Level = (() => {
+  const envLevel = process.env.LOG_LEVEL;
+  if (envLevel && isValidLevel(envLevel)) return envLevel;
+  return process.env.NODE_ENV === 'production' ? 'info' : 'debug';
+})();
 
 interface LogMeta {
   [key: string]: unknown;

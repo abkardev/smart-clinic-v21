@@ -5,10 +5,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
 import { getAuthUser } from '@/app/lib/auth';
 import { MSG } from '@/app/lib/botMessages';
+import { required } from '@/app/lib/env';
 
-const WA_URL = () => `https://graph.facebook.com/v18.0/${process.env.WHATSAPP_PHONE_ID}/messages`;
+const WHATSAPP_TOKEN = required('WHATSAPP_TOKEN');
+const WHATSAPP_PHONE_ID = required('WHATSAPP_PHONE_ID');
+
+const WA_URL = () => `https://graph.facebook.com/v18.0/${WHATSAPP_PHONE_ID}/messages`;
 const WA_HEADERS = () => ({
-  Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+  Authorization: `Bearer ${WHATSAPP_TOKEN}`,
   'Content-Type': 'application/json',
 });
 

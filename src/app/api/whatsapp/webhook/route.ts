@@ -11,10 +11,14 @@ import { isDuplicateMessage } from '@/app/lib/duplicateGuard';
 import { fetchWithRetry } from '@/app/lib/retry';
 import { trackEvent } from '@/app/lib/conversationTracker';
 import { metrics } from '@/app/lib/metrics';
+import { required } from '@/app/lib/env';
 
-const WA_URL = () => `https://graph.facebook.com/v21.0/${process.env.WHATSAPP_PHONE_ID}/messages`;
+const WHATSAPP_TOKEN = required('WHATSAPP_TOKEN');
+const WHATSAPP_PHONE_ID = required('WHATSAPP_PHONE_ID');
+
+const WA_URL = () => `https://graph.facebook.com/v21.0/${WHATSAPP_PHONE_ID}/messages`;
 const WA_HEADERS = () => ({
-  Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+  Authorization: `Bearer ${WHATSAPP_TOKEN}`,
   'Content-Type': 'application/json',
 });
 

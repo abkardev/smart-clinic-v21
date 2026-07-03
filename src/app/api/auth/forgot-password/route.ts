@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { prisma } from '@/app/lib/prisma';
 import { checkRateLimit } from '@/app/lib/rateLimit';
+import { optional } from '@/app/lib/env';
 
 export async function POST(req: NextRequest) {
   try {
@@ -30,7 +31,8 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL}/reset-password/${token}`;
+      const baseUrl = optional('NEXT_PUBLIC_APP_URL') || 'http://localhost:3000';
+      const resetUrl = `${baseUrl}/reset-password/${token}`;
       console.log(`[DEV] Reset URL for ${user.email}: ${resetUrl}`);
     }
 
