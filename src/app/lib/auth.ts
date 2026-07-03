@@ -3,18 +3,25 @@ import bcrypt from 'bcryptjs';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from './prisma';
 
-const JWT_SECRET = process.env.JWT_SECRET;
-
-if (!JWT_SECRET) {
-  throw new Error('JWT_SECRET environment variable is not set');
-}
+const JWT_SECRET: string = (() => {
+  const val = process.env.JWT_SECRET;
+  if (!val) throw new Error('JWT_SECRET environment variable is not set');
+  return val;
+})();
 
 export function signToken(userId: string): string {
   return jwt.sign({ id: userId }, JWT_SECRET, { expiresIn: '7d' });
 }
 
 export function verifyToken(token: string): { id: string } {
-  return jwt.verify(token, JWT_SECRET) as { id: string };
+  const decoded = jwt.verify(token, JWT_SECRET);
+  if (typeof decoded === 'string') {
+    return { id: decoded };
+  }
+  if (typeof decoded === 'object' && decoded !== null && 'id' in decoded) {
+    return { id: (decoded as { id: unknown }).id as string };
+  }
+  throw new Error('Invalid token payload');
 }
 
 export async function hashPassword(password: string): Promise<string> {

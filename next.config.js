@@ -3,13 +3,8 @@ const nextConfig = {
   // ── Force all pages to be dynamic (no static prerender) ───────────────────
   // This is a SPA — all pages require auth context, no static content.
   output: undefined,
-
-  // ── Serverless function tracing ──────────────────────────────────────────
-  experimental: {
-    outputFileTracingIncludes: {
-      '/*': ['./node_modules/.prisma/**/*', './node_modules/@prisma/**/*'],
-    },
-  },
+  staticPageGenerationTimeout: 300,
+  generateEtags: false,
 
   // ── Compiler ──────────────────────────────────────────────────────────────
   compiler: {

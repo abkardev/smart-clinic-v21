@@ -531,7 +531,7 @@ async function executeBooking(
     try {
       const doc = await prisma.doctor.findUnique({ where: { id: data.doctorId! } });
       if (doc && result) {
-        const fullBooking = await prisma.booking.findUnique({ where: { id: result.bookingId } });
+        const fullBooking = await prisma.booking.findUnique({ where: { id: result.id } });
         if (fullBooking) {
           const { createCalendarEvent } = await import('./googleCalendar');
           const cal = await createCalendarEvent(fullBooking, doc);
@@ -545,8 +545,8 @@ async function executeBooking(
       const bookingDate = new Date(data.date);
       const now = new Date();
       const diffDays = Math.floor((bookingDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-      if (diffDays <= 1 && result?.bookingId) {
-        sendReminderMessage(userId, result.bookingId, adapter).catch(() => {});
+      if (diffDays <= 1 && result?.id) {
+        sendReminderMessage(userId, result.id, adapter).catch(() => {});
       }
     }
 
@@ -565,7 +565,7 @@ async function executeBooking(
     ));
     await adapter.sendText(userId, MSG.preVisitInstructions);
 
-    return result;
+    return result ? { bookingId: result.id, created: result.created } : null;
   } catch (err: unknown) {
     const e = err as { code?: string; message?: string };
     if (e.message?.includes('already in progress')) {
@@ -603,7 +603,7 @@ export async function processMessage(
   });
 
   // Track event
-  const track = (overrides: Partial<Parameters<typeof trackEvent>[0]>) => {
+  const track = (overrides: Partial<Omit<Parameters<typeof trackEvent>[0], 'success'>> & { success: boolean }) => {
     trackEvent({
       conversationId,
       userId,
