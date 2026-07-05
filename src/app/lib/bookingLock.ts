@@ -51,6 +51,10 @@ export async function createBookingIdempotent(
     });
 
     try {
+      const instagramPsid = source === BookingSource.instagram
+        ? userId.replace(/^ig_/, '')
+        : undefined;
+
       const booking = await tx.booking.create({
         data: {
           name: data.name!,
@@ -61,6 +65,7 @@ export async function createBookingIdempotent(
           doctorId: data.doctorId!,
           source,
           status: 'confirmed',
+          instagramPsid,
           notes: `Best time to call: ${data.callTimeEn}${data.whatsappNumber ? ` | WhatsApp: ${data.whatsappNumber}` : ''}`,
         },
       });

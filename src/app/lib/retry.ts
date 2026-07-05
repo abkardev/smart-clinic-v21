@@ -1,6 +1,12 @@
 import { logger } from './logger';
 import { metrics } from './metrics';
 
+// Only retry transient/rate-limit/server errors.
+// Do NOT retry 4xx client errors (400, 401, 403, 404, 409, 422) or
+// Meta-specific errors (OAuthException, validation errors) — these are
+// permanent failures and should be returned to the caller immediately.
+const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+
 export interface RetryOptions {
   maxRetries: number;
   baseDelayMs: number;
@@ -12,7 +18,7 @@ const DEFAULT_OPTIONS: RetryOptions = {
   maxRetries: 3,
   baseDelayMs: 500,
   maxDelayMs: 8000,
-  retryOn: (status: number) => status === 429 || status >= 500,
+  retryOn: (status: number) => RETRYABLE_STATUSES.has(status),
 };
 
 export async function fetchWithRetry(

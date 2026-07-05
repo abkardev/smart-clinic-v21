@@ -1,6 +1,27 @@
 import { PrismaClient } from '@prisma/client';
 import { required } from './env';
 
+const REQUIRED_STARTUP_VARS = ['DATABASE_URL', 'JWT_SECRET'];
+const missingCfg: string[] = [];
+for (const name of REQUIRED_STARTUP_VARS) {
+  const val = process.env[name];
+  if (!val || val.startsWith('your_')) missingCfg.push(name);
+}
+if (missingCfg.length > 0) {
+  const msg =
+    `\n  Startup failed — missing required environment variable(s):\n` +
+    missingCfg.map((n) => `    • ${n}`).join('\n') +
+    `\n\n  Set them in your .env.local or deployment environment variables.\n`;
+  console.error(msg);
+  throw new Error(`Missing required environment variables: ${missingCfg.join(', ')}`);
+}
+
+const PRISMA_CLIENT_VERSION = require('@prisma/client/package.json').version;
+console.log(
+  `\n  Node.js ${process.version} · ${process.platform} (${process.arch})` +
+  `\n  Prisma Client ${PRISMA_CLIENT_VERSION} · ${process.env.NODE_ENV || 'development'}\n`
+);
+
 required('DATABASE_URL');
 
 const globalForPrisma = globalThis as unknown as {

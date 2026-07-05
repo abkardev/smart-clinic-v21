@@ -3,7 +3,7 @@ export const maxDuration = 60;
 
 import { NextRequest } from 'next/server';
 import { createHmac, timingSafeEqual } from 'crypto';
-import { processMessage, BotAdapter } from '@/app/lib/botEngine';
+import { processMessage, BotAdapter, registerFallbackRows } from '@/app/lib/botEngine';
 import { BookingSource } from '@prisma/client';
 import { logger } from '@/app/lib/logger';
 import { generateWebhookId, getOrCreateCorrelationId } from '@/app/lib/correlation';
@@ -12,6 +12,7 @@ import { fetchWithRetry } from '@/app/lib/retry';
 import { trackEvent } from '@/app/lib/conversationTracker';
 import { metrics } from '@/app/lib/metrics';
 import { required } from '@/app/lib/env';
+import { META_LIMITS, igQuickReplyTitle, parseMetaError } from '@/app/lib/metaValidation';
 
 const INSTAGRAM_TOKEN = required('INSTAGRAM_TOKEN');
 
@@ -20,6 +21,24 @@ const IG_HEADERS = () => ({
   Authorization: `Bearer ${INSTAGRAM_TOKEN}`,
   'Content-Type': 'application/json',
 });
+
+async function callMetaApi(url: string, headers: Record<string, string>, payload: unknown, cid: string): Promise<Response> {
+  const start = Date.now();
+  const body = JSON.stringify(payload);
+  const res = await fetchWithRetry(url, { method: 'POST', headers, body }, cid);
+  const duration = Date.now() - start;
+  metrics.metaApiLatency.observe(duration);
+
+      const resBody = res.ok ? '' : await res.text().catch(() => '');
+      const metaErr = resBody ? parseMetaError(resBody) : undefined;
+      logger.info('[MetaAPI] Instagram sent', {
+        correlationId: cid, duration, status: res.status, ok: res.ok,
+        error: resBody || undefined,
+        ...(metaErr ? { metaCode: metaErr.code, metaType: metaErr.type, metaMessage: metaErr.message, metaTrace: metaErr.fbtraceId } : {}),
+      });
+
+  return res;
+}
 
 function verifySignature(rawBody: string, signatureHeader: string | null): boolean {
   if (!signatureHeader) return false;
@@ -38,84 +57,61 @@ function verifySignature(rawBody: string, signatureHeader: string | null): boole
   }
 }
 
-const QUICK_REPLY_LIMIT = 13;
-const QUICK_REPLY_TITLE_MAX = 20;
-
 function makeInstagramAdapter(cid: string): BotAdapter {
   return {
     async sendText(to, text) {
-      const start = Date.now();
+      // Strip ig_ prefix to get raw PSID for Meta API
+      const recipientId = to.replace(/^ig_/, '');
+      const payload = { recipient: { id: recipientId }, message: { text } };
       try {
-        const res = await fetchWithRetry(IG_URL(), {
-          method: 'POST',
-          headers: IG_HEADERS(),
-          body: JSON.stringify({ recipient: { id: to }, message: { text } }),
-        }, cid);
-        metrics.metaApiLatency.observe(Date.now() - start);
+        const res = await callMetaApi(IG_URL(), IG_HEADERS(), payload, cid);
         if (!res.ok) logger.error('IG sendText failed', { status: res.status, correlationId: cid });
       } catch (err) {
-        metrics.metaApiLatency.observe(Date.now() - start);
         logger.error('IG sendText error', { error: String(err), correlationId: cid });
       }
     },
 
     async sendList(to, header, body, _button, sections) {
+      const recipientId = to.replace(/^ig_/, '');
       const allRows = sections.flatMap(s => s.rows);
 
       await this.sendText(to, `*${header}*\n\n${body}`);
 
       const fitsQuickReplies =
-        allRows.length <= QUICK_REPLY_LIMIT &&
-        allRows.every(r => r.title.length <= QUICK_REPLY_TITLE_MAX);
+        allRows.length <= META_LIMITS.INSTAGRAM.QUICK_REPLY_LIMIT &&
+        allRows.every(r => r.title.length <= META_LIMITS.INSTAGRAM.QUICK_REPLY_TITLE);
 
       try {
-        const listStart = Date.now();
         if (fitsQuickReplies) {
-          const res = await fetchWithRetry(IG_URL(), {
-            method: 'POST',
-            headers: IG_HEADERS(),
-            body: JSON.stringify({
-              recipient: { id: to },
-              message: {
-                text: 'اختر / Choose:',
-                quick_replies: allRows.map(r => ({
-                  content_type: 'text',
-                  title: r.title.length > QUICK_REPLY_TITLE_MAX
-                    ? r.title.slice(0, QUICK_REPLY_TITLE_MAX - 1) + '…'
-                    : r.title,
-                  payload: r.id,
-                })),
-              },
-            }),
-          }, cid);
-          metrics.metaApiLatency.observe(Date.now() - listStart);
-          if (!res.ok) throw new Error(await res.text());
+          const payload = {
+            recipient: { id: recipientId },
+            message: {
+              text: 'اختر / Choose:',
+              quick_replies: allRows.map(r => ({
+                content_type: 'text',
+                title: igQuickReplyTitle(r.title, r.description || r.title),
+                payload: r.id,
+              })),
+            },
+          };
+          const res = await callMetaApi(IG_URL(), IG_HEADERS(), payload, cid);
+          if (!res.ok) {
+            const errBody = await res.text().catch(() => '');
+            const metaErr = parseMetaError(errBody);
+            logger.error('IG sendList quick_replies rejected', {
+              status: res.status, error: errBody, correlationId: cid,
+              ...(metaErr ? { metaCode: metaErr.code, metaType: metaErr.type, metaMessage: metaErr.message, metaTrace: metaErr.fbtraceId } : {}),
+            });
+            throw new Error(errBody);
+          }
         } else {
-          const res = await fetchWithRetry(IG_URL(), {
-            method: 'POST',
-            headers: IG_HEADERS(),
-            body: JSON.stringify({
-              recipient: { id: to },
-              message: {
-                attachment: {
-                  type: 'template',
-                  payload: {
-                    template_type: 'generic',
-                    elements: allRows.slice(0, 10).map(r => ({
-                      title: r.title.slice(0, 80),
-                      subtitle: r.description?.slice(0, 80),
-                      buttons: [{ type: 'postback', title: 'اختر / Select', payload: r.id }],
-                    })),
-                  },
-                },
-              },
-            }),
-          }, cid);
-          metrics.metaApiLatency.observe(Date.now() - listStart);
-          if (!res.ok) throw new Error(await res.text());
+          throw new Error('Too many rows for Instagram quick replies');
         }
       } catch (err) {
-        logger.warn('IG sendList error, falling back to plain text', { error: String(err), correlationId: cid });
+        await registerFallbackRows(to, allRows);
+        logger.warn('IG sendList failed, falling back to numbered text', {
+          error: String(err), correlationId: cid, rowCount: allRows.length,
+        });
         const lines = allRows.map((r, i) => `${i + 1}. ${r.title}`);
         await this.sendText(to, `${lines.join('\n')}\n\nأرسل رقم اختيارك / Send the number of your choice.`);
       }

@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
 import { apiResponse } from '@/app/lib/apiResponse';
-import { BookingStatus, BookingSource } from '@prisma/client';
+import { BookingSource } from '@prisma/client';
 
 export async function GET(_req: NextRequest) {
   try {

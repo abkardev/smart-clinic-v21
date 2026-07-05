@@ -3,7 +3,7 @@ export const maxDuration = 60;
 
 import { NextRequest } from 'next/server';
 import { createHmac, timingSafeEqual } from 'crypto';
-import { processMessage, BotAdapter } from '@/app/lib/botEngine';
+import { processMessage, BotAdapter, registerFallbackRows } from '@/app/lib/botEngine';
 import { BookingSource } from '@prisma/client';
 import { logger } from '@/app/lib/logger';
 import { generateWebhookId, getOrCreateCorrelationId } from '@/app/lib/correlation';
@@ -12,6 +12,7 @@ import { fetchWithRetry } from '@/app/lib/retry';
 import { trackEvent } from '@/app/lib/conversationTracker';
 import { metrics } from '@/app/lib/metrics';
 import { required } from '@/app/lib/env';
+import { validateWaPayload, parseMetaError } from '@/app/lib/metaValidation';
 
 const WHATSAPP_TOKEN = required('WHATSAPP_TOKEN');
 const WHATSAPP_PHONE_ID = required('WHATSAPP_PHONE_ID');
@@ -21,6 +22,24 @@ const WA_HEADERS = () => ({
   Authorization: `Bearer ${WHATSAPP_TOKEN}`,
   'Content-Type': 'application/json',
 });
+
+async function callMetaApi(url: string, headers: Record<string, string>, payload: unknown, cid: string): Promise<Response> {
+  const start = Date.now();
+  const body = JSON.stringify(payload);
+  const res = await fetchWithRetry(url, { method: 'POST', headers, body }, cid);
+  const duration = Date.now() - start;
+  metrics.metaApiLatency.observe(duration);
+
+      const resBody = res.ok ? '' : await res.text().catch(() => '');
+      const metaErr = resBody ? parseMetaError(resBody) : undefined;
+      logger.info('[MetaAPI] WhatsApp sent', {
+        correlationId: cid, duration, status: res.status, ok: res.ok,
+        error: resBody || undefined,
+        ...(metaErr ? { metaCode: metaErr.code, metaType: metaErr.type, metaMessage: metaErr.message, metaTrace: metaErr.fbtraceId } : {}),
+      });
+
+  return res;
+}
 
 function verifySignature(rawBody: string, signatureHeader: string | null): boolean {
   if (!signatureHeader) return false;
@@ -42,47 +61,52 @@ function verifySignature(rawBody: string, signatureHeader: string | null): boole
 function makeWhatsAppAdapter(cid: string): BotAdapter {
   return {
     async sendText(to, text) {
-      const start = Date.now();
+      const payload = { messaging_product: 'whatsapp', to, type: 'text', text: { body: text } };
       try {
-        const res = await fetchWithRetry(WA_URL(), {
-          method: 'POST',
-          headers: WA_HEADERS(),
-          body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'text', text: { body: text } }),
-        }, cid);
-        metrics.metaApiLatency.observe(Date.now() - start);
-        if (!res.ok) logger.error('WA sendText failed', { status: res.status, body: await res.text(), correlationId: cid });
+        const res = await callMetaApi(WA_URL(), WA_HEADERS(), payload, cid);
+        if (!res.ok) logger.error('WA sendText failed', { status: res.status, correlationId: cid });
       } catch (err) {
-        metrics.metaApiLatency.observe(Date.now() - start);
         logger.error('WA sendText error', { error: String(err), correlationId: cid });
       }
     },
 
     async sendList(to, header, body, button, sections) {
-      const start = Date.now();
+      const interactivePayload = {
+        type: 'list',
+        header: { type: 'text', text: header },
+        body: { text: body },
+        footer: { text: 'SmartClinic 🏥' },
+        action: { button, sections },
+      };
+      validateWaPayload(interactivePayload);
+
+      const payload = {
+        messaging_product: 'whatsapp',
+        to,
+        type: 'interactive',
+        interactive: interactivePayload,
+      };
+
       try {
-        const res = await fetchWithRetry(WA_URL(), {
-          method: 'POST',
-          headers: WA_HEADERS(),
-          body: JSON.stringify({
-            messaging_product: 'whatsapp',
-            to,
-            type: 'interactive',
-            interactive: {
-              type: 'list',
-              header: { type: 'text', text: header },
-              body: { text: body },
-              footer: { text: 'SmartClinic 🏥' },
-              action: { button, sections },
-            },
-          }),
-        }, cid);
-        metrics.metaApiLatency.observe(Date.now() - start);
-        if (!res.ok) throw new Error(await res.text());
+        const res = await callMetaApi(WA_URL(), WA_HEADERS(), payload, cid);
+        if (!res.ok) {
+          const errBody = await res.text().catch(() => '');
+          const metaErr = parseMetaError(errBody);
+          logger.error('WA sendList rejected by Meta', {
+            status: res.status, error: errBody, correlationId: cid,
+            ...(metaErr ? { metaCode: metaErr.code, metaType: metaErr.type, metaMessage: metaErr.message, metaTrace: metaErr.fbtraceId } : {}),
+          });
+          throw new Error(errBody);
+        }
       } catch (err) {
-        metrics.metaApiLatency.observe(Date.now() - start);
-        logger.warn('WA sendList failed, falling back to plain text', { error: String(err), correlationId: cid });
-        const items = sections.flatMap(s => s.rows).map((r, i) => `${i + 1}. ${r.title}`).join('\n');
-        await this.sendText(to, `${body}\n\n${items}\n\nأرسل رقم اختيارك / Send the number of your choice.`);
+        const rows = sections.flatMap(s => s.rows);
+        await registerFallbackRows(to, rows);
+        logger.warn('WA sendList failed, falling back to plain text', {
+          error: String(err), correlationId: cid, rowCount: rows.length,
+        });
+        const items = rows.map((r, i) => `${i + 1}. ${r.title}`).join('\n');
+        const fallback = `${body}\n\n${items}\n\nأرسل رقم اختيارك / Send the number of your choice.`;
+        await this.sendText(to, fallback);
       }
     },
   };

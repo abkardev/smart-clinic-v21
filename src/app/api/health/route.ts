@@ -7,6 +7,9 @@ import pkg from '../../../../package.json';
 const START_TIME = Date.now();
 const COMMIT_SHA = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || process.env.VERCEL_GIT_COMMIT_SHA || null;
 const DEPLOYED_AT = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_AT ? new Date(process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_AT).toISOString() : null;
+const NODE_VERSION = process.version;
+const PRISMA_CLIENT_VERSION = require('@prisma/client/package.json').version;
+const ENVIRONMENT = process.env.NODE_ENV || 'development';
 
 type CheckStatus = 'healthy' | 'degraded' | 'unhealthy';
 interface CheckResult {
@@ -94,44 +97,59 @@ function checkBlobStorage(): CheckResult {
 }
 
 export async function GET(req: NextRequest) {
-  const start = Date.now();
+  try {
+    const start = Date.now();
 
-  const [db, env, wa, ig, gcal, blob] = await Promise.all([
-    checkDatabase(),
-    Promise.resolve(checkEnvironment()),
-    Promise.resolve(checkWhatsApp()),
-    Promise.resolve(checkInstagram()),
-    Promise.resolve(checkGoogleCalendar()),
-    Promise.resolve(checkBlobStorage()),
-  ]);
+    const [db, env, wa, ig, gcal, blob] = await Promise.all([
+      checkDatabase(),
+      Promise.resolve(checkEnvironment()),
+      Promise.resolve(checkWhatsApp()),
+      Promise.resolve(checkInstagram()),
+      Promise.resolve(checkGoogleCalendar()),
+      Promise.resolve(checkBlobStorage()),
+    ]);
 
-  const checks = {
-    database: db,
-    environment: env,
-    whatsApp: wa,
-    instagram: ig,
-    googleCalendar: gcal,
-    blobStorage: blob,
-  };
+    const checks = {
+      database: db,
+      environment: env,
+      whatsApp: wa,
+      instagram: ig,
+      googleCalendar: gcal,
+      blobStorage: blob,
+    };
 
-  const entries = Object.values(checks);
-  const hasUnhealthy = entries.some(c => c.status === 'unhealthy');
-  const hasDegraded = entries.some(c => c.status === 'degraded');
-  const overall: CheckStatus = hasUnhealthy ? 'unhealthy' : hasDegraded ? 'degraded' : 'healthy';
+    const entries = Object.values(checks);
+    const hasUnhealthy = entries.some(c => c.status === 'unhealthy');
+    const hasDegraded = entries.some(c => c.status === 'degraded');
+    const overall: CheckStatus = hasUnhealthy ? 'unhealthy' : hasDegraded ? 'degraded' : 'healthy';
 
-  const response = {
-    status: overall,
-    timestamp: new Date().toISOString(),
-    latencyMs: Date.now() - start,
-    uptimeSeconds: Math.floor((Date.now() - START_TIME) / 1000),
-    version: {
-      build: pkg.version,
-      commit: COMMIT_SHA,
-      deployedAt: DEPLOYED_AT,
-    },
-    checks,
-  };
+    const response = {
+      status: overall,
+      timestamp: new Date().toISOString(),
+      latencyMs: Date.now() - start,
+      uptimeSeconds: Math.floor((Date.now() - START_TIME) / 1000),
+      environment: ENVIRONMENT,
+      version: {
+        build: pkg.version,
+        node: NODE_VERSION,
+        prismaClient: PRISMA_CLIENT_VERSION,
+        commit: COMMIT_SHA,
+        deployedAt: DEPLOYED_AT,
+      },
+      checks,
+    };
 
-  const statusCode = overall === 'unhealthy' ? 503 : overall === 'degraded' ? 200 : 200;
-  return NextResponse.json(response, { status: statusCode });
+    const statusCode = overall === 'unhealthy' ? 503 : overall === 'degraded' ? 200 : 200;
+    return NextResponse.json(response, { status: statusCode });
+  } catch (err) {
+    return NextResponse.json(
+      {
+        status: 'unhealthy',
+        timestamp: new Date().toISOString(),
+        error: 'health check crashed',
+        detail: (err as Error).message,
+      },
+      { status: 503 }
+    );
+  }
 }

@@ -16,9 +16,11 @@ export async function isDuplicateMessage(
   try {
     const existing = await prisma.processedMessage.findUnique({ where: { messageId } });
     if (existing) {
+      const ageMs = Date.now() - existing.processedAt.getTime();
       logger.warn('[Dedup] Duplicate message detected', {
         messageId, source, userId, correlationId,
         originalProcessedAt: existing.processedAt.toISOString(),
+        ageMs,
       });
       return true;
     }

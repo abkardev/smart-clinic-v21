@@ -2,8 +2,8 @@ export function required(name: string): string {
   const val = process.env[name];
   if (!val) {
     throw new Error(
-      `Environment variable "${name}" is required but not set.\n` +
-      `Check your .env.local or deployment environment variables.`
+      `Missing environment variable: ${name}\n` +
+      `Set it in .env.local or your deployment environment variables.`
     );
   }
   return val;
@@ -16,3 +16,13 @@ export function optional(name: string): string | undefined {
 export function optionalWithDefault(name: string, defaultValue: string): string {
   return process.env[name] || defaultValue;
 }
+
+export const META_REQUIRED = {
+  WHATSAPP: ['WHATSAPP_TOKEN', 'WHATSAPP_PHONE_ID'],
+  INSTAGRAM: ['INSTAGRAM_TOKEN'],
+} as const;
+
+export const META_OPTIONAL = {
+  WHATSAPP: ['WHATSAPP_VERIFY_TOKEN', 'WHATSAPP_APP_SECRET'],
+  INSTAGRAM: ['INSTAGRAM_VERIFY_TOKEN', 'INSTAGRAM_APP_SECRET'],
+} as const;

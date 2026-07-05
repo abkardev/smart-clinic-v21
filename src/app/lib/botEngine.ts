@@ -14,6 +14,7 @@ import {
 import { createBookingIdempotent } from './bookingLock';
 import { trackEvent } from './conversationTracker';
 import { metrics } from './metrics';
+import { waRowTitle, waRowDescription, waSectionTitle, waButtonLabel } from './metaValidation';
 
 export interface BotAdapter {
   sendText(to: string, text: string): Promise<void>;
@@ -35,6 +36,40 @@ export interface MessageHandler {
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
 const ENGLISH_NAME_RE = /^[A-Za-z]+(?:[ '\-][A-Za-z]+)*$/;
+const FALLBACK_TTL_MS = 10 * 60 * 1000;
+
+export async function registerFallbackRows(userId: string, rows: Array<{ id: string }>): Promise<void> {
+  if (rows.length === 0) return;
+  const expiresAt = new Date(Date.now() + FALLBACK_TTL_MS);
+  await prisma.fallbackMapping.upsert({
+    where: { userId },
+    create: { userId, rows: rows as never, expiresAt },
+    update: { rows: rows as never, expiresAt },
+  }).catch(() => { /* non-fatal */ });
+}
+
+async function resolveFallbackInput(userId: string, input: string): Promise<string | null> {
+  const entry = await prisma.fallbackMapping.findUnique({ where: { userId } });
+  if (!entry) return null;
+  if (entry.expiresAt < new Date()) {
+    await prisma.fallbackMapping.delete({ where: { userId } }).catch(() => {});
+    return null;
+  }
+  const rows = entry.rows as Array<{ id: string }>;
+  const num = parseInt(input, 10);
+  if (isNaN(num) || num < 1 || num > rows.length) return null;
+  await prisma.fallbackMapping.delete({ where: { userId } }).catch(() => {});
+  return rows[num - 1].id;
+}
+
+// ─── Row builder (single-language titles for Meta limits) ───────────────────
+function rowAr(id: string, titleAr: string, descEn?: string): { id: string; title: string; description?: string } {
+  return { id, title: titleAr, ...(descEn ? { description: descEn } : {}) };
+}
+
+function navRow(id: string, labelAr: string, labelEn: string) {
+  return { id, title: labelAr, description: labelEn };
+}
 
 function isValidEnglishName(input: string): boolean {
   return ENGLISH_NAME_RE.test(input.trim()) && input.trim().split(/\s+/).length >= 2;
@@ -56,11 +91,11 @@ export function determineEventType(input: string, isText: boolean): EventType {
 
 function navigationSection(): ListSection {
   return {
-    title: bi('التنقل', 'Navigation'),
+    title: waSectionTitle('التنقل', 'Navigation'),
     rows: [
-      { id: 'back', title: bi('⬅️ رجوع', '⬅️ Back') },
-      { id: 'main_menu', title: bi('🏠 القائمة الرئيسية', '🏠 Main Menu') },
-      { id: 'cancel', title: bi('❌ إلغاء', '❌ Cancel') },
+      navRow('back', '⬅️ رجوع', 'Back'),
+      navRow('main_menu', '🏠 القائمة الرئيسية', 'Main Menu'),
+      navRow('cancel', '❌ إلغاء', 'Cancel'),
     ],
   };
 }
@@ -68,7 +103,7 @@ function navigationSection(): ListSection {
 async function sendTextWithNav(userId: string, text: string, adapter: BotAdapter, cid: string): Promise<void> {
   await adapter.sendText(userId, text);
   try {
-    await adapter.sendList(userId, bi('التنقل', 'Navigation'), bi('اختر من القائمة:', 'Choose from the list:'), bi('اختر', 'Choose'), [navigationSection()]);
+    await adapter.sendList(userId, waHeader(bi('التنقل', 'Navigation')), bi('اختر من القائمة:', 'Choose from the list:'), waButtonLabel('اختر', 'Choose'), [navigationSection()]);
   } catch (err) {
     logger.warn('[Nav] navigation list failed, continuing', { error: String(err), correlationId: cid });
   }
@@ -76,14 +111,14 @@ async function sendTextWithNav(userId: string, text: string, adapter: BotAdapter
 
 async function sendMainMenu(userId: string, adapter: BotAdapter) {
   const { bookAr, bookEn, offersAr, offersEn, contactAr, contactEn, locationAr, locationEn, myBookingAr, myBookingEn } = MSG.menuOptions;
-  return adapter.sendList(userId, '🏥 SmartClinic', MSG.welcome(), bi('اختر', 'Choose'), [{
-    title: bi('القائمة', 'Menu'),
+  return adapter.sendList(userId, '🏥 SmartClinic', MSG.welcome(), waButtonLabel('اختر', 'Choose'), [{
+    title: waSectionTitle('القائمة', 'Menu'),
     rows: [
-      { id: 'menu_book', title: bi(bookAr, bookEn) },
-      { id: 'menu_my_booking', title: bi(myBookingAr, myBookingEn) },
-      { id: 'menu_offers', title: bi(offersAr, offersEn) },
-      { id: 'menu_location', title: bi(locationAr, locationEn) },
-      { id: 'menu_contact', title: bi(contactAr, contactEn) },
+      rowAr('menu_book', bookAr, bookEn),
+      rowAr('menu_my_booking', myBookingAr, myBookingEn),
+      rowAr('menu_offers', offersAr, offersEn),
+      rowAr('menu_location', locationAr, locationEn),
+      rowAr('menu_contact', contactAr, contactEn),
     ],
   }]);
 }
@@ -91,19 +126,19 @@ async function sendMainMenu(userId: string, adapter: BotAdapter) {
 async function sendDoctorsList(userId: string, adapter: BotAdapter) {
   const doctors = await prisma.doctor.findMany({ where: { isActive: true } });
   if (!doctors.length) return adapter.sendText(userId, MSG.noDoctors);
-  return adapter.sendList(userId, bi('اختر الطبيب', 'Choose Doctor'), MSG.selectDoctor, bi('اختر', 'Choose'), [
-    { title: bi('الأطباء', 'Doctors'), rows: doctors.map(d => ({
+  return adapter.sendList(userId, waHeader(bi('اختر الطبيب', 'Choose Doctor')), MSG.selectDoctor, waButtonLabel('اختر', 'Choose'), [
+    { title: waSectionTitle('الأطباء', 'Doctors'), rows: doctors.map(d => ({
       id: d.id,
-      title: `د. ${d.nameAr || d.nameEn} / Dr. ${d.nameEn || d.nameAr}`,
-      description: `${d.specialtyAr || ''}${d.specialtyAr && d.specialtyEn ? ' / ' : ''}${d.specialtyEn || ''}`,
+      title: waRowTitle(`د. ${d.nameAr || d.nameEn}`, `Dr. ${d.nameEn || d.nameAr}`),
+      description: waRowDescription(d.specialtyAr || (d.nameAr || ''), d.specialtyEn || (d.nameEn || '')),
     })) },
     navigationSection(),
   ]);
 }
 
 async function sendServicesList(userId: string, data: BookingData, adapter: BotAdapter) {
-  return adapter.sendList(userId, `د. ${data.doctorNameAr} / Dr. ${data.doctorNameEn}`, MSG.selectService(data.doctorNameAr!, data.doctorNameEn!), bi('اختر', 'Choose'), [
-    { title: bi('الخدمات', 'Services'), rows: SERVICES_BILINGUAL.map(s => ({ id: s.id, title: bi(s.ar, s.en) })) },
+  return adapter.sendList(userId, waHeader(`د. ${data.doctorNameAr} / Dr. ${data.doctorNameEn}`), MSG.selectService(data.doctorNameAr!, data.doctorNameEn!), waButtonLabel('اختر', 'Choose'), [
+    { title: waSectionTitle('الخدمات', 'Services'), rows: SERVICES_BILINGUAL.map(s => rowAr(s.id, s.ar, s.en)) },
     navigationSection(),
   ]);
 }
@@ -114,11 +149,11 @@ async function sendDatePicker(userId: string, data: BookingData, adapter: BotAda
   const days = await listUpcomingDays(doc, 7);
   const openDays = days.filter(d => d.availableCount > 0);
   if (!openDays.length) return adapter.sendText(userId, MSG.noUpcomingAvailability);
-  return adapter.sendList(userId, bi('اختر اليوم', 'Choose Day'), MSG.selectDate, bi('اختر', 'Choose'), [
-    { title: bi('الأيام المتاحة', 'Available Days'), rows: openDays.map(d => ({
+  return adapter.sendList(userId, waHeader(bi('اختر اليوم', 'Choose Day')), MSG.selectDate, waButtonLabel('اختر', 'Choose'), [
+    { title: waSectionTitle('الأيام المتاحة', 'Available Days'), rows: openDays.map(d => ({
       id: `date_${d.date}`,
-      title: bi(d.labelAr, d.labelEn),
-      description: `${d.availableCount} ${bi(d.availableCount === 1 ? 'موعد' : 'مواعيد', d.availableCount === 1 ? 'slot' : 'slots')}`,
+      title: waRowTitle(d.labelAr, d.labelEn),
+      description: waRowDescription(`${d.availableCount} ${d.availableCount === 1 ? 'موعد' : 'مواعيد'}`, `${d.availableCount} ${d.availableCount === 1 ? 'slot' : 'slots'}`),
     })) },
     navigationSection(),
   ]);
@@ -147,16 +182,18 @@ async function resendTimePicker(userId: string, data: BookingData, adapter: BotA
   if (!doc) return adapter.sendText(userId, MSG.error);
   const { available } = await getAvailableSlots(doc, data.date!).catch(() => ({ available: [] as string[] }));
   if (!available.length) return sendDatePicker(userId, data, adapter);
-  return adapter.sendList(userId, bi('اختر الوقت', 'Choose Time'), MSG.selectTime(labelAr, labelEn), bi('اختر', 'Choose'), [
-    { title: bi(labelAr, labelEn), rows: available.slice(0, 10).map(t => ({ id: `time_${t}`, title: t })) },
+  return adapter.sendList(userId, waHeader(bi('اختر الوقت', 'Choose Time')), MSG.selectTime(labelAr, labelEn), waButtonLabel('اختر', 'Choose'), [
+    { title: waSectionTitle(labelAr, labelEn), rows: available.slice(0, 10).map(t => ({ id: `time_${t}`, title: t })) },
     navigationSection(),
   ]);
 }
 
 async function sendCallTimesList(userId: string, adapter: BotAdapter) {
-  return adapter.sendList(userId, bi('أفضل وقت للتواصل', 'Best Time to Call'), MSG.askCallTime, bi('اختر', 'Choose'), [
-    { title: bi('أفضل وقت', 'Best Time'), rows: CALL_TIMES.map(c => ({
-      id: c.id, title: bi(c.titleAr, c.titleEn), description: bi(c.descAr, c.descEn),
+  return adapter.sendList(userId, waHeader(bi('أفضل وقت للتواصل', 'Best Time to Call')), MSG.askCallTime, waButtonLabel('اختر', 'Choose'), [
+    { title: waSectionTitle('أفضل وقت', 'Best Time'), rows: CALL_TIMES.map(c => ({
+      id: c.id,
+      title: waRowTitle(c.titleAr, c.titleEn),
+      description: waRowDescription(c.descAr, c.descEn),
     })) },
     navigationSection(),
   ]);
@@ -172,12 +209,12 @@ async function sendBookingSummaryScreen(userId: string, data: BookingData, adapt
     labelAr, labelEn, data.time!,
     data.callTimeAr!, data.callTimeEn!
   );
-  return adapter.sendList(userId, bi('ملخص الحجز', 'Booking Summary'), summary, bi('اختر', 'Choose'), [{
-    title: bi('تأكيد الحجز', 'Confirm Booking'),
+  return adapter.sendList(userId, waHeader(bi('ملخص الحجز', 'Booking Summary')), summary, waButtonLabel('اختر', 'Choose'), [{
+    title: waSectionTitle('تأكيد الحجز', 'Confirm Booking'),
     rows: [
-      { id: 'confirm_booking', title: bi('✅ تأكيد الحجز', '✅ Confirm') },
-      { id: 'edit_booking', title: bi('✏️ تعديل الحجز', '✏️ Edit') },
-      { id: 'cancel_booking', title: bi('❌ إلغاء', '❌ Cancel') },
+      rowAr('confirm_booking', '✅ تأكيد الحجز', 'Confirm'),
+      rowAr('edit_booking', '✏️ تعديل الحجز', 'Edit'),
+      rowAr('cancel_booking', '❌ إلغاء', 'Cancel'),
     ],
   }]);
 }
@@ -201,8 +238,8 @@ async function sendOffersScreen(userId: string, adapter: BotAdapter): Promise<st
     text += '\n';
   });
   text += MSG.offersFooter;
-  await adapter.sendList(userId, bi('العروض', 'Offers'), text, bi('اختر', 'Choose'), [
-    { title: bi('الإجراءات', 'Actions'), rows: [{ id: 'menu_book', title: bi('📅 احجز الآن', '📅 Book Now') }] },
+  await adapter.sendList(userId, waHeader(bi('العروض', 'Offers')), text, waButtonLabel('اختر', 'Choose'), [
+    { title: waSectionTitle('الإجراءات', 'Actions'), rows: [rowAr('menu_book', '📅 احجز الآن', 'Book Now')] },
     navigationSection(),
   ]);
   return 'offers';
@@ -213,8 +250,13 @@ async function sendOffersScreen(userId: string, adapter: BotAdapter): Promise<st
 async function lookupExistingBooking(userId: string): Promise<{ id: string; date: string; time: string; doctor: { nameAr: string; nameEn: string } } | null> {
   const today = new Date().toISOString().split('T')[0];
   const phone = userId.replace(/^ig_/, '');
+  const isInstagram = userId.startsWith('ig_');
   const booking = await prisma.booking.findFirst({
-    where: { phone, date: { gte: today }, status: { notIn: ['cancelled', 'completed'] } },
+    where: {
+      date: { gte: today },
+      status: { notIn: ['cancelled', 'completed'] },
+      ...(isInstagram ? { instagramPsid: phone } : { phone }),
+    },
     orderBy: { date: 'asc' },
     include: { doctor: { select: { nameAr: true, nameEn: true } } },
   });
@@ -233,13 +275,13 @@ class MainMenuHandler implements MessageHandler {
         const existing = await lookupExistingBooking(userId);
         if (!existing) { await adapter.sendText(userId, MSG.noFutureBooking); return; }
         const docName = `${existing.doctor.nameAr} / ${existing.doctor.nameEn}`;
-        await adapter.sendList(userId, bi('موعدي', 'My Booking'), MSG.existingBookingFound(existing.date, existing.time, docName), bi('اختر', 'Choose'), [
+        await adapter.sendList(userId, waHeader(bi('موعدي', 'My Booking')), MSG.existingBookingFound(existing.date, existing.time, docName), waButtonLabel('اختر', 'Choose'), [
           {
-            title: bi('الموعد', 'Appointment'),
+            title: waSectionTitle('الموعد', 'Appointment'),
             rows: [
-              { id: `cancel_${existing.id}`, title: bi('❌ إلغاء الموعد', '❌ Cancel') },
-              { id: `reschedule_${existing.id}`, title: bi('🔄 تغيير الموعد', '🔄 Reschedule') },
-              { id: 'new_booking', title: bi('📅 حجز جديد', '📅 New Booking') },
+              rowAr(`cancel_${existing.id}`, '❌ إلغاء الموعد', 'Cancel'),
+              rowAr(`reschedule_${existing.id}`, '🔄 تغيير الموعد', 'Reschedule'),
+              rowAr('new_booking', '📅 حجز جديد', 'New Booking'),
             ],
           },
           navigationSection(),
@@ -324,8 +366,8 @@ class DateHandler implements MessageHandler {
     const d = new Date(date);
     const labelAr = d.toLocaleDateString('ar-SA', { weekday: 'long', day: 'numeric', month: 'long' });
     const labelEn = d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' });
-    await adapter.sendList(userId, bi('اختر الوقت', 'Choose Time'), MSG.selectTime(labelAr, labelEn), bi('اختر', 'Choose'), [
-      { title: bi(labelAr, labelEn), rows: available.slice(0, 10).map(t => ({ id: `time_${t}`, title: t })) },
+    await adapter.sendList(userId, waHeader(bi('اختر الوقت', 'Choose Time')), MSG.selectTime(labelAr, labelEn), waButtonLabel('اختر', 'Choose'), [
+      { title: waSectionTitle(labelAr, labelEn), rows: available.slice(0, 10).map(t => ({ id: `time_${t}`, title: t })) },
       navigationSection(),
     ]);
     return 'select_time';
@@ -401,13 +443,13 @@ class SummaryHandler implements MessageHandler {
         await adapter.sendText(userId, MSG.cancelled);
         return 'cancelled';
       case 'edit_booking': {
-        await adapter.sendList(userId, bi('تعديل الحجز', 'Edit Booking'), MSG.bookingEditOptions, bi('اختر', 'Choose'), [
-          { title: bi('اختر للتعديل', 'Choose to Edit'), rows: [
-            { id: 'edit_doctor', title: bi('👨‍⚕️ الطبيب', '👨‍⚕️ Doctor') },
-            { id: 'edit_service', title: bi('💊 الخدمة', '💊 Service') },
-            { id: 'edit_datetime', title: bi('📅 التاريخ والوقت', '📅 Date & Time') },
-            { id: 'edit_name', title: bi('👤 الاسم', '👤 Name') },
-            { id: 'edit_calltime', title: bi('📞 وقت الاتصال', '📞 Call Time') },
+        await adapter.sendList(userId, waHeader(bi('تعديل الحجز', 'Edit Booking')), MSG.bookingEditOptions, waButtonLabel('اختر', 'Choose'), [
+          { title: waSectionTitle('اختر للتعديل', 'Choose to Edit'), rows: [
+            rowAr('edit_doctor', '👨‍⚕️ الطبيب', 'Doctor'),
+            rowAr('edit_service', '💊 الخدمة', 'Service'),
+            rowAr('edit_datetime', '📅 التاريخ والوقت', 'Date & Time'),
+            rowAr('edit_name', '👤 الاسم', 'Name'),
+            rowAr('edit_calltime', '📞 وقت الاتصال', 'Call Time'),
           ]},
           navigationSection(),
         ]);
@@ -658,6 +700,15 @@ export async function processMessage(
 
     const step = session.step as string;
     const data: BookingData = session.data || {};
+
+    // ── Fallback numbered-list mapping ──
+    if (/^\d+$/.test(normInput)) {
+      const mappedId = await resolveFallbackInput(userId, normInput);
+      if (mappedId) {
+        logger.info('[Engine] fallback mapping', { userId, from: normInput, to: mappedId, correlationId: cid });
+        normInput = mappedId;
+      }
+    }
 
     logger.debug('[Engine] routing', { userId, step, input: normInput, sessionVersion: session.sessionVersion, correlationId: cid });
 

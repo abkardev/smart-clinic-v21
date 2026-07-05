@@ -66,6 +66,7 @@ enum WhatsAppStep {
   ask_whatsapp
   ask_call_time
   offers
+  booking_summary
   done
 }
 
@@ -102,6 +103,7 @@ model User {
   blockedSlots         BlockedSlot[] @relation("BlockedSlotBlockedBy")
   auditLogs            AuditLog[]    @relation("AuditLogUser")
 
+  @@index([resetPasswordToken])
   @@map("users")
 }
 
@@ -168,13 +170,18 @@ model Booking {
   // Source
   source          BookingSource @default(dashboard)
 
+  // Instagram PSID for My Booking lookup (set only for Instagram-sourced bookings)
+  instagramPsid   String?
+
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
   // Prevent double bookings (replaces Mongoose compound unique index)
   @@unique([doctorId, date, time])
   @@index([doctorId, date])
+  @@index([phone])
   @@index([status])
+  @@index([instagramPsid])
   @@map("bookings")
 }
 
@@ -343,6 +350,17 @@ model ConversationEvent {
   @@index([userId])
   @@index([createdAt(sort: Desc)])
   @@map("conversation_events")
+}
+
+// ─── Fallback numbered-list mapping (persistent replacement for in-memory Map) ─
+model FallbackMapping {
+  userId    String   @id
+  rows      Json
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+  @@map("fallback_mappings")
 }
 
 // ─── Idempotency lock (Phase 2) ───────────────────────────────────────────────
