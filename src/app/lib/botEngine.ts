@@ -14,7 +14,7 @@ import {
 import { createBookingIdempotent } from './bookingLock';
 import { trackEvent } from './conversationTracker';
 import { metrics } from './metrics';
-import { waRowTitle, waRowDescription, waSectionTitle, waButtonLabel } from './metaValidation';
+import { waRowTitle, waRowDescription, waSectionTitle, waButtonLabel, waHeader } from './metaValidation';
 
 export interface BotAdapter {
   sendText(to: string, text: string): Promise<void>;
