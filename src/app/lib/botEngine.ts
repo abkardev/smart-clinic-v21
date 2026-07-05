@@ -635,7 +635,7 @@ export async function processMessage(
 ) {
   const startTime = Date.now();
   const cid = correlationId || 'no-cid';
-  const normInput = input.trim();
+  let normInput = input.trim();
   const eventType = determineEventType(normInput, isText);
   const conversationId = `conv_${userId}`;
 
