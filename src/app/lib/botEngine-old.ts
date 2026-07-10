@@ -14,7 +14,7 @@ import {
 import { createBookingIdempotent } from './bookingLock';
 import { trackEvent } from './conversationTracker';
 import { metrics } from './metrics';
-import { waRowTitle, waRowDescription, waSectionTitle, waButtonLabel, waHeader, maxDataRows } from './metaValidation';
+import { waRowTitle, waRowDescription, waSectionTitle, waButtonLabel, waHeader } from './metaValidation';
 
 export interface BotAdapter {
   sendText(to: string, text: string): Promise<void>;
@@ -124,16 +124,8 @@ async function sendMainMenu(userId: string, adapter: BotAdapter) {
 }
 
 async function sendDoctorsList(userId: string, adapter: BotAdapter) {
-  const allDoctors = await prisma.doctor.findMany({ where: { isActive: true } });
-  if (!allDoctors.length) return adapter.sendText(userId, MSG.noDoctors);
-  // WhatsApp lists cap at 10 rows TOTAL including the 3-row nav section, so
-  // only 7 doctors can be shown per message without Meta rejecting it.
-  const doctors = allDoctors.slice(0, maxDataRows(3));
-  if (allDoctors.length > doctors.length) {
-    logger.warn('[Engine] Doctor list truncated to fit WhatsApp row limit', {
-      total: allDoctors.length, shown: doctors.length,
-    });
-  }
+  const doctors = await prisma.doctor.findMany({ where: { isActive: true } });
+  if (!doctors.length) return adapter.sendText(userId, MSG.noDoctors);
   return adapter.sendList(userId, waHeader(bi('اختر الطبيب', 'Choose Doctor')), MSG.selectDoctor, waButtonLabel('اختر', 'Choose'), [
     { title: waSectionTitle('الأطباء', 'Doctors'), rows: doctors.map(d => ({
       id: d.id,
@@ -155,7 +147,7 @@ async function sendDatePicker(userId: string, data: BookingData, adapter: BotAda
   const doc = await prisma.doctor.findUnique({ where: { id: data.doctorId! } });
   if (!doc) return adapter.sendText(userId, MSG.error);
   const days = await listUpcomingDays(doc, 7);
-  const openDays = days.filter(d => d.availableCount > 0).slice(0, maxDataRows(3));
+  const openDays = days.filter(d => d.availableCount > 0);
   if (!openDays.length) return adapter.sendText(userId, MSG.noUpcomingAvailability);
   return adapter.sendList(userId, waHeader(bi('اختر اليوم', 'Choose Day')), MSG.selectDate, waButtonLabel('اختر', 'Choose'), [
     { title: waSectionTitle('الأيام المتاحة', 'Available Days'), rows: openDays.map(d => ({
@@ -190,12 +182,8 @@ async function resendTimePicker(userId: string, data: BookingData, adapter: BotA
   if (!doc) return adapter.sendText(userId, MSG.error);
   const { available } = await getAvailableSlots(doc, data.date!).catch(() => ({ available: [] as string[] }));
   if (!available.length) return sendDatePicker(userId, data, adapter);
-  // WhatsApp lists cap at 10 rows TOTAL including the 3-row nav section, so
-  // only 7 time slots can be shown per message without Meta rejecting it
-  // (this previously overflowed to 10 slots + 3 nav = 13 rows, causing Meta
-  // to reject the list and silently fall back to a "type the number" prompt).
   return adapter.sendList(userId, waHeader(bi('اختر الوقت', 'Choose Time')), MSG.selectTime(labelAr, labelEn), waButtonLabel('اختر', 'Choose'), [
-    { title: waSectionTitle(labelAr, labelEn), rows: available.slice(0, maxDataRows(3)).map(t => ({ id: `time_${t}`, title: t })) },
+    { title: waSectionTitle(labelAr, labelEn), rows: available.slice(0, 10).map(t => ({ id: `time_${t}`, title: t })) },
     navigationSection(),
   ]);
 }
@@ -379,7 +367,7 @@ class DateHandler implements MessageHandler {
     const labelAr = d.toLocaleDateString('ar-SA', { weekday: 'long', day: 'numeric', month: 'long' });
     const labelEn = d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' });
     await adapter.sendList(userId, waHeader(bi('اختر الوقت', 'Choose Time')), MSG.selectTime(labelAr, labelEn), waButtonLabel('اختر', 'Choose'), [
-      { title: waSectionTitle(labelAr, labelEn), rows: available.slice(0, maxDataRows(3)).map(t => ({ id: `time_${t}`, title: t })) },
+      { title: waSectionTitle(labelAr, labelEn), rows: available.slice(0, 10).map(t => ({ id: `time_${t}`, title: t })) },
       navigationSection(),
     ]);
     return 'select_time';

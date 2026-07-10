@@ -10,7 +10,7 @@ import { required } from '@/app/lib/env';
 const WHATSAPP_TOKEN = required('WHATSAPP_TOKEN');
 const WHATSAPP_PHONE_ID = required('WHATSAPP_PHONE_ID');
 
-const WA_URL = () => `https://graph.facebook.com/v21.0/${WHATSAPP_PHONE_ID}/messages`;
+const WA_URL = () => `https://graph.facebook.com/v18.0/${WHATSAPP_PHONE_ID}/messages`;
 const WA_HEADERS = () => ({
   Authorization: `Bearer ${WHATSAPP_TOKEN}`,
   'Content-Type': 'application/json',
