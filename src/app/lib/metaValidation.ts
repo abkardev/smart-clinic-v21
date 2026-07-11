@@ -141,6 +141,38 @@ export function validateListIntegrity(payload: {
   }
 }
 
+export function logInteractivePayloadDiagnostic(payload: {
+  header?: { text: string };
+  body: { text: string };
+  footer?: { text: string };
+  action: { button: string; sections: Array<{ title: string; rows: Array<{ id: string; title: string; description?: string }> }> };
+}): void {
+  const sections = payload.action.sections;
+  const allRows = sections.flatMap(s => s.rows);
+  const rowIds = allRows.map(r => r.id);
+  const rowTitles = allRows.map(r => r.title);
+  const rowDescs = allRows.filter(r => r.description).map(r => r.description!);
+
+  logger.info('[MetaValidation] Interactive payload diagnostic', {
+    headerText: payload.header?.text ?? '',
+    headerLength: payload.header?.text?.length ?? 0,
+    bodyText: payload.body.text,
+    bodyLength: payload.body.text.length,
+    footerText: payload.footer?.text ?? '',
+    footerLength: payload.footer?.text?.length ?? 0,
+    buttonLabel: payload.action.button,
+    buttonLength: payload.action.button.length,
+    sectionCount: sections.length,
+    sectionTitles: sections.map(s => ({ title: s.title, length: s.title.length, rowCount: s.rows.length })),
+    rowCount: allRows.length,
+    rowIds,
+    rowTitleLengths: rowTitles.map(t => t.length),
+    rowDescLengths: rowDescs.map(d => d.length),
+    maxRowTitleLength: Math.max(...rowTitles.map(t => t.length), 0),
+    duplicateIds: rowIds.filter((id, i) => rowIds.indexOf(id) !== i).filter((v, i, a) => a.indexOf(v) === i),
+  });
+}
+
 export function validateWaPayload(payload: {
   header?: { text: string };
   body: { text: string };

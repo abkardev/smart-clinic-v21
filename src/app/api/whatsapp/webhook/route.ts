@@ -12,7 +12,7 @@ import { fetchWithRetry } from '@/app/lib/retry';
 import { trackEvent } from '@/app/lib/conversationTracker';
 import { metrics } from '@/app/lib/metrics';
 import { required } from '@/app/lib/env';
-import { validateWaPayload, parseMetaError } from '@/app/lib/metaValidation';
+import { validateWaPayload, parseMetaError, logInteractivePayloadDiagnostic } from '@/app/lib/metaValidation';
 
 const WHATSAPP_TOKEN = required('WHATSAPP_TOKEN');
 const WHATSAPP_PHONE_ID = required('WHATSAPP_PHONE_ID');
@@ -26,17 +26,20 @@ const WA_HEADERS = () => ({
 async function callMetaApi(url: string, headers: Record<string, string>, payload: unknown, cid: string): Promise<Response> {
   const start = Date.now();
   const body = JSON.stringify(payload);
+  logger.debug('[MetaAPI] WhatsApp outgoing request', {
+    correlationId: cid, url: url.slice(0, 80), payloadSize: body.length, payload: body.slice(0, 2000),
+  });
   const res = await fetchWithRetry(url, { method: 'POST', headers, body }, cid);
   const duration = Date.now() - start;
   metrics.metaApiLatency.observe(duration);
 
-      const resBody = res.ok ? '' : await res.text().catch(() => '');
-      const metaErr = resBody ? parseMetaError(resBody) : undefined;
-      logger.info('[MetaAPI] WhatsApp sent', {
-        correlationId: cid, duration, status: res.status, ok: res.ok,
-        error: resBody || undefined,
-        ...(metaErr ? { metaCode: metaErr.code, metaType: metaErr.type, metaMessage: metaErr.message, metaTrace: metaErr.fbtraceId } : {}),
-      });
+  const resBody = res.ok ? '' : await res.clone().text().catch(() => '');
+  const metaErr = resBody ? parseMetaError(resBody) : undefined;
+  logger.info('[MetaAPI] WhatsApp sent', {
+    correlationId: cid, duration, status: res.status, ok: res.ok,
+    error: resBody || undefined,
+    ...(metaErr ? { metaCode: metaErr.code, metaType: metaErr.type, metaMessage: metaErr.message, metaTrace: metaErr.fbtraceId } : {}),
+  });
 
   return res;
 }
@@ -79,6 +82,7 @@ function makeWhatsAppAdapter(cid: string): BotAdapter {
         action: { button, sections },
       };
       validateWaPayload(interactivePayload);
+      logInteractivePayloadDiagnostic(interactivePayload);
 
       const payload = {
         messaging_product: 'whatsapp',
@@ -86,6 +90,13 @@ function makeWhatsAppAdapter(cid: string): BotAdapter {
         type: 'interactive',
         interactive: interactivePayload,
       };
+
+      logger.info('[MetaAPI] Sending WhatsApp list', {
+        correlationId: cid, to, header, bodyPreview: body.slice(0, 200),
+        button, sectionCount: sections.length,
+        rowCount: sections.reduce((s, sec) => s + sec.rows.length, 0),
+        rowIds: sections.flatMap(sec => sec.rows.map(r => r.id)),
+      });
 
       try {
         const res = await callMetaApi(WA_URL(), WA_HEADERS(), payload, cid);
@@ -149,6 +160,7 @@ export async function POST(req: NextRequest) {
     const webhookDedupKey = `${entry?.id || ''}:${changes?.field || ''}:${metadata?.phone_number_id || ''}`;
 
     if (!messages.length) {
+      logger.info('WhatsApp webhook POST — no messages, acked', { webhookId, duration: Date.now() - webhookStart });
       return new Response('OK', { status: 200 });
     }
 
@@ -172,7 +184,10 @@ export async function POST(req: NextRequest) {
           ? (message.interactive?.list_reply?.id ?? message.interactive?.button_reply?.id ?? '')
           : '';
 
-      if (!userInput) continue;
+      if (!userInput) {
+        logger.debug('WhatsApp message — empty input, skipped', { phone, messageId, messageType: message.type, webhookId });
+        continue;
+      }
 
       const correlationId = getOrCreateCorrelationId(webhookId);
       const isTextMessage = message.type === 'text';
@@ -226,5 +241,6 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  logger.info('WhatsApp webhook POST completed', { webhookId, duration: Date.now() - webhookStart });
   return new Response('OK', { status: 200 });
 }

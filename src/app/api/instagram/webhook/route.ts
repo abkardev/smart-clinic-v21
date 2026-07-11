@@ -25,17 +25,20 @@ const IG_HEADERS = () => ({
 async function callMetaApi(url: string, headers: Record<string, string>, payload: unknown, cid: string): Promise<Response> {
   const start = Date.now();
   const body = JSON.stringify(payload);
+  logger.debug('[MetaAPI] Instagram outgoing request', {
+    correlationId: cid, url: url.slice(0, 80), payloadSize: body.length, payload: body.slice(0, 2000),
+  });
   const res = await fetchWithRetry(url, { method: 'POST', headers, body }, cid);
   const duration = Date.now() - start;
   metrics.metaApiLatency.observe(duration);
 
-      const resBody = res.ok ? '' : await res.text().catch(() => '');
-      const metaErr = resBody ? parseMetaError(resBody) : undefined;
-      logger.info('[MetaAPI] Instagram sent', {
-        correlationId: cid, duration, status: res.status, ok: res.ok,
-        error: resBody || undefined,
-        ...(metaErr ? { metaCode: metaErr.code, metaType: metaErr.type, metaMessage: metaErr.message, metaTrace: metaErr.fbtraceId } : {}),
-      });
+  const resBody = res.ok ? '' : await res.clone().text().catch(() => '');
+  const metaErr = resBody ? parseMetaError(resBody) : undefined;
+  logger.info('[MetaAPI] Instagram sent', {
+    correlationId: cid, duration, status: res.status, ok: res.ok,
+    error: resBody || undefined,
+    ...(metaErr ? { metaCode: metaErr.code, metaType: metaErr.type, metaMessage: metaErr.message, metaTrace: metaErr.fbtraceId } : {}),
+  });
 
   return res;
 }
@@ -141,12 +144,17 @@ export async function POST(req: NextRequest) {
   const webhookStart = Date.now();
   const webhookId = generateWebhookId();
 
+  logger.info('[Webhook] Instagram POST entered', { webhookId });
+
   const rawBody = await req.text().catch(() => '');
+  logger.debug('[Webhook] Instagram raw body', { webhookId, rawBodySize: rawBody.length, rawBodyPreview: rawBody.slice(0, 500) });
   let body: any = null;
-  try { body = JSON.parse(rawBody); } catch { /* invalid JSON */ }
+  try { body = JSON.parse(rawBody); } catch {
+    logger.warn('[Webhook] Instagram — invalid JSON body, returning EVENT_RECEIVED', { webhookId, rawBodySize: rawBody.length });
+  }
 
   if (!verifySignature(rawBody, req.headers.get('X-Hub-Signature-256'))) {
-    logger.warn('Instagram webhook — invalid signature', { webhookId });
+    logger.warn('[Webhook] Instagram — invalid signature, rejecting', { webhookId });
     return new Response('Forbidden', { status: 403 });
   }
 
@@ -166,7 +174,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    if (!messaging.length) return new Response('EVENT_RECEIVED', { status: 200 });
+    if (!messaging.length) {
+      logger.info('[Webhook] Instagram — no messaging events, returning EVENT_RECEIVED', { webhookId, duration: Date.now() - webhookStart });
+      return new Response('EVENT_RECEIVED', { status: 200 });
+    }
 
     const adapter = makeInstagramAdapter(webhookId);
     metrics.instagramWebhooksTotal.inc();
@@ -179,12 +190,15 @@ export async function POST(req: NextRequest) {
       const msgStart = Date.now();
 
       if (event.message?.is_echo) {
-        logger.debug('Skipping Instagram echo message', { webhookId });
+        logger.debug('[Webhook] Instagram — echo message, skipped', { webhookId, senderId: event.sender?.id });
         continue;
       }
 
       const senderId = event.sender?.id as string | undefined;
-      if (!senderId) continue;
+      if (!senderId) {
+        logger.debug('[Webhook] Instagram — no sender ID, skipped', { webhookId });
+        continue;
+      }
 
       const sessionId = `ig_${senderId}`;
       const messageId = event.message?.mid as string | undefined;
@@ -194,7 +208,10 @@ export async function POST(req: NextRequest) {
       const typedText         = (event.message?.text ?? '').trim();
 
       const userInput = quickReplyPayload || postbackPayload || typedText;
-      if (!userInput) continue;
+      if (!userInput) {
+        logger.debug('[Webhook] Instagram — empty user input, skipped', { webhookId, senderId, hasQuickReply: !!quickReplyPayload, hasPostback: !!postbackPayload });
+        continue;
+      }
 
       const correlationId = getOrCreateCorrelationId(webhookId);
       const isTextMessage = !quickReplyPayload && !postbackPayload;
@@ -248,5 +265,6 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  logger.info('[Webhook] Instagram POST completed', { webhookId, duration: Date.now() - webhookStart });
   return new Response('EVENT_RECEIVED', { status: 200 });
 }
