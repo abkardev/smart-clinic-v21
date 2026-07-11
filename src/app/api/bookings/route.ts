@@ -22,6 +22,13 @@ export async function GET(req: NextRequest) {
     const status    = searchParams.get('status');
     const startDate = searchParams.get('startDate');
     const endDate   = searchParams.get('endDate');
+    const legacy    = searchParams.get('legacy') === 'true';
+    let page        = parseInt(searchParams.get('page') ?? '1', 10);
+    let pageSize    = parseInt(searchParams.get('pageSize') ?? '50', 10);
+
+    if (page < 1) page = 1;
+    if (pageSize < 1) pageSize = 50;
+    if (pageSize > 200) pageSize = 200;
 
     const where: Record<string, unknown> = {};
     if (doctorId) where.doctorId = doctorId;
@@ -35,15 +42,37 @@ export async function GET(req: NextRequest) {
       where.date = dateFilter;
     }
 
-    const bookings = await prisma.booking.findMany({
-      where,
-      include: { doctor: { select: doctorSelect } },
-      orderBy: [{ date: 'asc' }, { time: 'asc' }],
-    });
+    if (legacy) {
+      const bookings = await prisma.booking.findMany({
+        where,
+        include: { doctor: { select: doctorSelect } },
+        orderBy: [{ date: 'asc' }, { time: 'asc' }],
+      });
+      const shaped = bookings.map(({ doctor, ...b }) => ({ ...b, doctorId: doctor }));
+      return apiResponse(shaped);
+    }
 
-    // Shape response to match original API (doctorId field holds populated doc)
+    const skip = (page - 1) * pageSize;
+
+    const [bookings, total] = await Promise.all([
+      prisma.booking.findMany({
+        where,
+        include: { doctor: { select: doctorSelect } },
+        orderBy: [{ date: 'asc' }, { time: 'asc' }],
+        skip,
+        take: pageSize,
+      }),
+      prisma.booking.count({ where }),
+    ]);
+
     const shaped = bookings.map(({ doctor, ...b }) => ({ ...b, doctorId: doctor }));
-    return apiResponse(shaped);
+    return NextResponse.json({
+      data: shaped,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
+    });
   } catch (err) {
     console.error(err);
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
