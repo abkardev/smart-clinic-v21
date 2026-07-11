@@ -65,9 +65,13 @@ function makeInstagramAdapter(cid: string): BotAdapter {
       const payload = { recipient: { id: recipientId }, message: { text } };
       try {
         const res = await callMetaApi(IG_URL(), IG_HEADERS(), payload, cid);
-        if (!res.ok) logger.error('IG sendText failed', { status: res.status, correlationId: cid });
+        if (!res.ok) {
+          logger.error('IG sendText failed', { status: res.status, correlationId: cid });
+          throw new Error(`Instagram sendText failed with status ${res.status}`);
+        }
       } catch (err) {
         logger.error('IG sendText error', { error: String(err), correlationId: cid });
+        throw err;
       }
     },
 
