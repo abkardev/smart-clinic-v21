@@ -37,6 +37,7 @@ export interface MessageHandler {
 const SESSION_TTL_MS = 30 * 60 * 1000;
 const PATIENT_NAME_RE = /^[\p{L}]+(?:[ '\-][\p{L}]+)*$/u;
 const FALLBACK_TTL_MS = 10 * 60 * 1000;
+const FF_EDIT_FLOW_FIX = process.env.FF_EDIT_FLOW_FIX === 'true';
 
 export async function registerFallbackRows(userId: string, rows: Array<{ id: string }>): Promise<void> {
   if (rows.length === 0) return;
@@ -462,9 +463,14 @@ class SummaryHandler implements MessageHandler {
           if (targetStep) {
             data.editReturn = 'booking_summary';
             data.editField = input;
-            await setSession(userId, targetStep, data);
-            await resendStep(userId, targetStep, data, adapter, cid);
-            return '__handled__';
+            if (FF_EDIT_FLOW_FIX) {
+              await resendStep(userId, targetStep, data, adapter, cid);
+              return targetStep;
+            } else {
+              await setSession(userId, targetStep, data);
+              await resendStep(userId, targetStep, data, adapter, cid);
+              return '__handled__';
+            }
           }
         }
         await sendBookingSummaryScreen(userId, data, adapter);
