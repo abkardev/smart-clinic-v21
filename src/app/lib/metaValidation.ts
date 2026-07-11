@@ -34,20 +34,12 @@ export const META_LIMITS = {
     BODY: 1024,
     FOOTER: 60,
     SECTION_TITLE: 24,
-    MAX_TOTAL_ROWS: 10,
   },
   INSTAGRAM: {
     QUICK_REPLY_TITLE: 20,
     QUICK_REPLY_LIMIT: 13,
   },
 } as const;
-
-// How many "data" rows (doctors, time slots, days, etc.) can be shown
-// alongside a fixed number of navigation rows without breaking WhatsApp's
-// 10-row-total limit (also safely under Instagram's 13-row quick-reply limit).
-export function maxDataRows(navRowCount: number): number {
-  return Math.max(1, META_LIMITS.WHATSAPP.MAX_TOTAL_ROWS - navRowCount);
-}
 
 export function truncate(str: string, max: number): string {
   const chars = Array.from(str);
@@ -118,25 +110,6 @@ export function validateListIntegrity(payload: {
 
   if (!button || button.trim().length === 0) {
     logger.warn('[Meta] List button label is empty');
-  }
-
-  // Safety net: WhatsApp rejects the ENTIRE list message if total rows across
-  // all sections exceed 10, which previously forced a silent fallback to a
-  // plain "type the number" text message. If a caller ever builds too many
-  // rows, trim from the EARLIEST sections first (data), preserving the LAST
-  // section (navigation) intact, rather than letting Meta reject the message.
-  const totalRows = sections.reduce((n, s) => n + s.rows.length, 0);
-  if (totalRows > META_LIMITS.WHATSAPP.MAX_TOTAL_ROWS) {
-    logger.warn('[Meta] List exceeds max total rows, trimming', {
-      totalRows, max: META_LIMITS.WHATSAPP.MAX_TOTAL_ROWS,
-    });
-    let overflow = totalRows - META_LIMITS.WHATSAPP.MAX_TOTAL_ROWS;
-    for (let si = 0; si < sections.length - 1 && overflow > 0; si++) {
-      const section = sections[si];
-      const removeCount = Math.min(overflow, section.rows.length);
-      section.rows.splice(section.rows.length - removeCount, removeCount);
-      overflow -= removeCount;
-    }
   }
 
   const seenIds = new Set<string>();
