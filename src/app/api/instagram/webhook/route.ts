@@ -148,7 +148,20 @@ export async function POST(req: NextRequest) {
 
   try {
     const entry     = body?.entry?.[0];
-    const messaging = entry?.messaging ?? [];
+    let messaging = entry?.messaging ?? [];
+
+    // Instagram Graph API format: entry[0].changes[0].value { sender, message, ... }
+    if (!messaging.length && entry?.changes?.length) {
+      messaging = entry.changes
+        .filter((c: { field?: string; value?: { sender?: { id?: string } } }) => c.value?.sender?.id)
+        .map((c: { value?: unknown }) => c.value);
+      if (messaging.length) {
+        logger.info('[Webhook] Graph API format detected', {
+          webhookId, changeCount: entry.changes.length, messageCount: messaging.length,
+        });
+      }
+    }
+
     if (!messaging.length) return new Response('EVENT_RECEIVED', { status: 200 });
 
     const adapter = makeInstagramAdapter(webhookId);
