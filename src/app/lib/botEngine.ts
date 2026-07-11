@@ -72,7 +72,8 @@ function navRow(id: string, labelAr: string, labelEn: string) {
 }
 
 function isValidPatientName(input: string): boolean {
-  return PATIENT_NAME_RE.test(input.trim()) && input.trim().split(/\s+/).length >= 2;
+  const trimmed = input.trim();
+  return trimmed.length >= 2 && PATIENT_NAME_RE.test(trimmed) && trimmed.split(/\s+/).length >= 1;
 }
 
 function bi(ar: string, en: string): string {
