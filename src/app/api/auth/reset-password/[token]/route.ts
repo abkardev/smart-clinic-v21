@@ -12,7 +12,7 @@ export async function POST(
 ) {
   try {
     const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
-    const rl = checkRateLimit(`reset-password:${ip}`, 5, 60 * 60 * 1000);
+    const rl = await checkRateLimit(`reset-password:${ip}`, 5, 60 * 60 * 1000);
     if (!rl.allowed) {
       return NextResponse.json({ message: 'Too many attempts. Please try again later.', messageAr: 'محاولات كثيرة. يرجى المحاولة لاحقاً.' }, { status: 429 });
     }

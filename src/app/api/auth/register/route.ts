@@ -9,7 +9,7 @@ import { checkRateLimit } from '@/app/lib/rateLimit';
 export async function POST(req: NextRequest) {
   try {
     const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
-    const rl = checkRateLimit(`register:${ip}`, 5, 60 * 60 * 1000);
+    const rl = await checkRateLimit(`register:${ip}`, 5, 60 * 60 * 1000);
     if (!rl.allowed) {
       return NextResponse.json({ message: 'Too many registration attempts. Please try again later.', messageAr: 'محاولات تسجيل كثيرة. يرجى المحاولة لاحقاً.' }, { status: 429 });
     }

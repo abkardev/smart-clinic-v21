@@ -363,6 +363,16 @@ model FallbackMapping {
   @@map("fallback_mappings")
 }
 
+// ─── Rate limiting (Phase 7) ──────────────────────────────────────────────────
+model RateLimit {
+  key       String   @id
+  count     Int      @default(1)
+  expiresAt DateTime
+
+  @@index([expiresAt])
+  @@map("rate_limits")
+}
+
 // ─── Idempotency lock (Phase 2) ───────────────────────────────────────────────
 model IdempotencyLock {
   key         String   @id
