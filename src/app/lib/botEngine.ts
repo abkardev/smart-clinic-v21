@@ -193,7 +193,7 @@ async function resendTimePicker(userId: string, data: BookingData, adapter: BotA
     ]);
   }
   const showCount = maxVisible - 1;
-  const slots = available.slice(0, showCount).map(t => ({ id: `time_${t}`, title: t }));
+  const slots: { id: string; title: string; description?: string }[] = available.slice(0, showCount).map(t => ({ id: `time_${t}`, title: t }));
   slots.push({ id: 'time_more', title: '🕐 المزيد من المواعيد', description: 'More Times' });
   return adapter.sendList(userId, waHeader(bi('اختر الوقت', 'Choose Time')), MSG.selectTime(labelAr, labelEn), waButtonLabel('اختر', 'Choose'), [
     { title: waSectionTitle(labelAr, labelEn), rows: slots },
@@ -388,7 +388,7 @@ class DateHandler implements MessageHandler {
       ]);
     } else {
       const showCount = maxVisible - 1;
-      const slots = available.slice(0, showCount).map(t => ({ id: `time_${t}`, title: t }));
+      const slots: { id: string; title: string; description?: string }[] = available.slice(0, showCount).map(t => ({ id: `time_${t}`, title: t }));
       slots.push({ id: 'time_more', title: '🕐 المزيد من المواعيد', description: 'More Times' });
       await adapter.sendList(userId, waHeader(bi('اختر الوقت', 'Choose Time')), MSG.selectTime(labelAr, labelEn), waButtonLabel('اختر', 'Choose'), [
         { title: waSectionTitle(labelAr, labelEn), rows: slots },
