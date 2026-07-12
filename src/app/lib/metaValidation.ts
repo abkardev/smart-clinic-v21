@@ -34,12 +34,60 @@ export const META_LIMITS = {
     BODY: 1024,
     FOOTER: 60,
     SECTION_TITLE: 24,
+    MAX_TOTAL_ROWS: 10,
   },
   INSTAGRAM: {
     QUICK_REPLY_TITLE: 20,
     QUICK_REPLY_LIMIT: 13,
   },
 } as const;
+
+export const MAX_TOTAL_ROWS = META_LIMITS.WHATSAPP.MAX_TOTAL_ROWS;
+
+const NAV_IDS = new Set(['back', 'main_menu', 'cancel']);
+
+export function ensureRowLimit(
+  sections: Array<{ title: string; rows: Array<{ id: string; title: string; description?: string }> }>
+): Array<{ title: string; rows: Array<{ id: string; title: string; description?: string }> }> {
+  const totalRows = sections.reduce((sum, sec) => sum + sec.rows.length, 0);
+  if (totalRows <= MAX_TOTAL_ROWS) return sections;
+
+  const navRows = sections.flatMap(s => s.rows).filter(r => NAV_IDS.has(r.id));
+  const navCount = navRows.length;
+  const maxContent = MAX_TOTAL_ROWS - navCount;
+
+  let contentRemaining = maxContent;
+  const result: Array<{ title: string; rows: Array<{ id: string; title: string; description?: string }> }> = [];
+
+  for (const section of sections) {
+    const contentRows = section.rows.filter(r => !NAV_IDS.has(r.id));
+    const sectionNavRows = section.rows.filter(r => NAV_IDS.has(r.id));
+
+    if (contentRemaining <= 0) {
+      if (sectionNavRows.length > 0) {
+        result.push({ title: section.title, rows: sectionNavRows });
+      }
+      continue;
+    }
+
+    if (contentRows.length <= contentRemaining) {
+      result.push(section);
+      contentRemaining -= contentRows.length;
+    } else {
+      result.push({
+        title: section.title,
+        rows: [...contentRows.slice(0, contentRemaining), ...sectionNavRows],
+      });
+      contentRemaining = 0;
+    }
+  }
+
+  logger.warn('[MetaValidation] Row limit enforced', {
+    totalRows, maxContent, navCount, trimmedCount: totalRows - maxContent,
+  });
+
+  return result;
+}
 
 export function truncate(str: string, max: number): string {
   const chars = Array.from(str);

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseMetaError, logInteractivePayloadDiagnostic, validateWaPayload, META_LIMITS } from './metaValidation';
+import { parseMetaError, logInteractivePayloadDiagnostic, validateWaPayload, ensureRowLimit, META_LIMITS, MAX_TOTAL_ROWS } from './metaValidation';
 
 describe('parseMetaError', () => {
   const authErrorBody = JSON.stringify({
@@ -178,5 +178,106 @@ describe('validateWaPayload — preserve behavior', () => {
       action: { button: 'Go', sections: [] },
     };
     expect(() => validateWaPayload(payload as any)).not.toThrow();
+  });
+});
+
+function makeSections(contentCount: number, navCount: number) {
+  const sections: Array<{ title: string; rows: Array<{ id: string; title: string }> }> = [];
+  if (contentCount > 0) {
+    sections.push({
+      title: 'Content',
+      rows: Array.from({ length: contentCount }, (_, i) => ({ id: `row_${i}`, title: `Option ${i + 1}` })),
+    });
+  }
+  if (navCount > 0) {
+    sections.push({
+      title: 'Navigation',
+      rows: Array.from({ length: navCount }, (_, i) => {
+        const ids = ['back', 'main_menu', 'cancel'];
+        return { id: ids[i] || `nav_${i}`, title: ids[i] || `Nav ${i + 1}` };
+      }),
+    });
+  }
+  return sections;
+}
+
+describe('ensureRowLimit', () => {
+  it('passes through exactly 10 rows unchanged', () => {
+    const sections = makeSections(7, 3);
+    const result = ensureRowLimit(sections);
+    expect(result).toBe(sections);
+    expect(result.flatMap(s => s.rows).length).toBe(10);
+  });
+
+  it('passes through 9 rows unchanged', () => {
+    const sections = makeSections(6, 3);
+    const result = ensureRowLimit(sections);
+    expect(result).toBe(sections);
+    expect(result.flatMap(s => s.rows).length).toBe(9);
+  });
+
+  it('passes through 8 rows unchanged', () => {
+    const sections = makeSections(5, 3);
+    const result = ensureRowLimit(sections);
+    expect(result).toBe(sections);
+    expect(result.flatMap(s => s.rows).length).toBe(8);
+  });
+
+  it('passes through 7 rows + navigation unchanged', () => {
+    const sections = makeSections(7, 3);
+    const result = ensureRowLimit(sections);
+    expect(result.flatMap(s => s.rows).length).toBe(10);
+  });
+
+  it('passes through 10 rows without navigation unchanged', () => {
+    const sections = makeSections(10, 0);
+    const result = ensureRowLimit(sections);
+    expect(result).toBe(sections);
+    expect(result.flatMap(s => s.rows).length).toBe(10);
+  });
+
+  it('trims 11 rows to 10, preserving nav', () => {
+    const sections = makeSections(8, 3);
+    expect(sections.flatMap(s => s.rows).length).toBe(11);
+    const result = ensureRowLimit(sections);
+    expect(result.flatMap(s => s.rows).length).toBe(10);
+    const navIds = result.flatMap(s => s.rows).filter(r => ['back', 'main_menu', 'cancel'].includes(r.id));
+    expect(navIds.length).toBe(3);
+  });
+
+  it('trims 13 rows to 10, preserving nav (root cause fix)', () => {
+    const sections = makeSections(10, 3);
+    expect(sections.flatMap(s => s.rows).length).toBe(13);
+    const result = ensureRowLimit(sections);
+    expect(result.flatMap(s => s.rows).length).toBe(10);
+    const navIds = result.flatMap(s => s.rows).filter(r => ['back', 'main_menu', 'cancel'].includes(r.id));
+    expect(navIds.length).toBe(3);
+    const contentIds = result.flatMap(s => s.rows).filter(r => !['back', 'main_menu', 'cancel'].includes(r.id));
+    expect(contentIds.length).toBe(7);
+  });
+
+  it('trims 20 rows to 10, preserving nav', () => {
+    const sections = makeSections(17, 3);
+    expect(sections.flatMap(s => s.rows).length).toBe(20);
+    const result = ensureRowLimit(sections);
+    expect(result.flatMap(s => s.rows).length).toBe(10);
+    const navIds = result.flatMap(s => s.rows).filter(r => ['back', 'main_menu', 'cancel'].includes(r.id));
+    expect(navIds.length).toBe(3);
+  });
+
+  it('trims rows without navigation to exactly MAX_TOTAL_ROWS', () => {
+    const sections = makeSections(15, 0);
+    const result = ensureRowLimit(sections);
+    expect(result.flatMap(s => s.rows).length).toBe(MAX_TOTAL_ROWS);
+  });
+
+  it('never returns a payload exceeding 10 total rows', () => {
+    for (let total = 0; total <= 30; total++) {
+      const navCount = Math.min(3, Math.floor(total / 2));
+      const contentCount = total - navCount;
+      const sections = makeSections(contentCount, navCount);
+      const result = ensureRowLimit(sections);
+      expect(result.flatMap(s => s.rows).length).toBeLessThanOrEqual(MAX_TOTAL_ROWS);
+    }
   });
 });

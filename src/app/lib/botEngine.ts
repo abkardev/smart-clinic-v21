@@ -184,9 +184,20 @@ async function resendTimePicker(userId: string, data: BookingData, adapter: BotA
   if (!doc) return adapter.sendText(userId, MSG.error);
   const { available } = await getAvailableSlots(doc, data.date!).catch(() => ({ available: [] as string[] }));
   if (!available.length) return sendDatePicker(userId, data, adapter);
+  const nav = navigationSection();
+  const maxVisible = 10 - nav.rows.length;
+  if (available.length <= maxVisible) {
+    return adapter.sendList(userId, waHeader(bi('اختر الوقت', 'Choose Time')), MSG.selectTime(labelAr, labelEn), waButtonLabel('اختر', 'Choose'), [
+      { title: waSectionTitle(labelAr, labelEn), rows: available.map(t => ({ id: `time_${t}`, title: t })) },
+      nav,
+    ]);
+  }
+  const showCount = maxVisible - 1;
+  const slots = available.slice(0, showCount).map(t => ({ id: `time_${t}`, title: t }));
+  slots.push({ id: 'time_more', title: '🕐 المزيد من المواعيد', description: 'More Times' });
   return adapter.sendList(userId, waHeader(bi('اختر الوقت', 'Choose Time')), MSG.selectTime(labelAr, labelEn), waButtonLabel('اختر', 'Choose'), [
-    { title: waSectionTitle(labelAr, labelEn), rows: available.slice(0, 10).map(t => ({ id: `time_${t}`, title: t })) },
-    navigationSection(),
+    { title: waSectionTitle(labelAr, labelEn), rows: slots },
+    nav,
   ]);
 }
 
@@ -368,16 +379,43 @@ class DateHandler implements MessageHandler {
     const d = new Date(date);
     const labelAr = d.toLocaleDateString('ar-SA', { weekday: 'long', day: 'numeric', month: 'long' });
     const labelEn = d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' });
-    await adapter.sendList(userId, waHeader(bi('اختر الوقت', 'Choose Time')), MSG.selectTime(labelAr, labelEn), waButtonLabel('اختر', 'Choose'), [
-      { title: waSectionTitle(labelAr, labelEn), rows: available.slice(0, 10).map(t => ({ id: `time_${t}`, title: t })) },
-      navigationSection(),
-    ]);
+    const nav = navigationSection();
+    const maxVisible = 10 - nav.rows.length;
+    if (available.length <= maxVisible) {
+      await adapter.sendList(userId, waHeader(bi('اختر الوقت', 'Choose Time')), MSG.selectTime(labelAr, labelEn), waButtonLabel('اختر', 'Choose'), [
+        { title: waSectionTitle(labelAr, labelEn), rows: available.map(t => ({ id: `time_${t}`, title: t })) },
+        nav,
+      ]);
+    } else {
+      const showCount = maxVisible - 1;
+      const slots = available.slice(0, showCount).map(t => ({ id: `time_${t}`, title: t }));
+      slots.push({ id: 'time_more', title: '🕐 المزيد من المواعيد', description: 'More Times' });
+      await adapter.sendList(userId, waHeader(bi('اختر الوقت', 'Choose Time')), MSG.selectTime(labelAr, labelEn), waButtonLabel('اختر', 'Choose'), [
+        { title: waSectionTitle(labelAr, labelEn), rows: slots },
+        nav,
+      ]);
+    }
     return 'select_time';
   }
 }
 
 class TimeHandler implements MessageHandler {
   async handle(userId: string, input: string, data: BookingData, adapter: BotAdapter, _source: BookingSource, cid: string): Promise<string | undefined> {
+    if (input === 'time_more') {
+      const doc = await prisma.doctor.findUnique({ where: { id: data.doctorId! } });
+      if (!doc) return;
+      const { available } = await getAvailableSlots(doc, data.date!).catch(() => ({ available: [] as string[] }));
+      const remaining = available.slice(6);
+      if (!remaining.length) { await adapter.sendText(userId, MSG.error); return; }
+      const d = data.date ? new Date(data.date) : new Date();
+      const labelAr = d.toLocaleDateString('ar-SA', { weekday: 'long', day: 'numeric', month: 'long' });
+      const labelEn = d.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' });
+      const displaySlots = remaining.slice(0, 7).map(t => ({ id: `time_${t}`, title: t }));
+      await adapter.sendList(userId, waHeader(bi('المزيد من المواعيد', 'More Times')), MSG.selectTime(labelAr, labelEn), waButtonLabel('اختر', 'Choose'), [
+        { title: waSectionTitle(labelAr, labelEn), rows: displaySlots },
+      ]);
+      return;
+    }
     if (!input.startsWith('time_')) { await adapter.sendText(userId, MSG.error); return; }
     const t = input.replace('time_', '');
     if (!/^\d{2}:\d{2}$/.test(t)) { await adapter.sendText(userId, MSG.error); return; }

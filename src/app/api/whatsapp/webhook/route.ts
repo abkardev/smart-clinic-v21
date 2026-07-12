@@ -12,7 +12,7 @@ import { fetchWithRetry } from '@/app/lib/retry';
 import { trackEvent } from '@/app/lib/conversationTracker';
 import { metrics } from '@/app/lib/metrics';
 import { required } from '@/app/lib/env';
-import { validateWaPayload, parseMetaError, logInteractivePayloadDiagnostic } from '@/app/lib/metaValidation';
+import { validateWaPayload, parseMetaError, logInteractivePayloadDiagnostic, ensureRowLimit } from '@/app/lib/metaValidation';
 
 const WHATSAPP_TOKEN = required('WHATSAPP_TOKEN');
 const WHATSAPP_PHONE_ID = required('WHATSAPP_PHONE_ID');
@@ -74,6 +74,7 @@ function makeWhatsAppAdapter(cid: string): BotAdapter {
     },
 
     async sendList(to, header, body, button, sections) {
+      sections = ensureRowLimit(sections);
       const interactivePayload = {
         type: 'list',
         header: { type: 'text', text: header },
