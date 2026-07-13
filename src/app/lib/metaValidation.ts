@@ -4,6 +4,10 @@ export interface MetaErrorInfo {
   code?: number;
   type?: string;
   message?: string;
+  errorSubcode?: number;
+  errorUserTitle?: string;
+  errorUserMsg?: string;
+  errorData?: unknown;
   details?: string;
   fbtraceId?: string;
 }
@@ -17,6 +21,10 @@ export function parseMetaError(body: string): MetaErrorInfo | null {
       code: err.code,
       type: err.type,
       message: err.message,
+      errorSubcode: err.error_subcode,
+      errorUserTitle: err.error_user_title,
+      errorUserMsg: err.error_user_msg,
+      errorData: err.error_data,
       details: err.error_data?.details,
       fbtraceId: err.fbtrace_id,
     };

@@ -99,6 +99,62 @@ describe('parseMetaError', () => {
     const roundTripped = JSON.parse(authErrorBody);
     expect(roundTripped.error.type).toBe('OAuthException');
   });
+
+  describe('extended fields (error_subcode, error_user_title, error_user_msg)', () => {
+    const tokenExpiredBody = JSON.stringify({
+      error: {
+        code: 190,
+        type: 'OAuthException',
+        message: 'Error validating access token',
+        error_subcode: 460,
+        error_user_title: 'Session expired',
+        error_user_msg: 'Your session has expired. Please log in again.',
+        error_data: { details: 'The session has been invalidated because the user changed their password.' },
+        fbtrace_id: 'TokenExp123',
+      },
+    });
+
+    it('captures error_subcode', () => {
+      const result = parseMetaError(tokenExpiredBody);
+      expect(result).not.toBeNull();
+      expect(result!.errorSubcode).toBe(460);
+    });
+
+    it('captures error_user_title', () => {
+      const result = parseMetaError(tokenExpiredBody);
+      expect(result).not.toBeNull();
+      expect(result!.errorUserTitle).toBe('Session expired');
+    });
+
+    it('captures error_user_msg', () => {
+      const result = parseMetaError(tokenExpiredBody);
+      expect(result).not.toBeNull();
+      expect(result!.errorUserMsg).toBe('Your session has expired. Please log in again.');
+    });
+
+    it('captures error_data as raw object', () => {
+      const result = parseMetaError(tokenExpiredBody);
+      expect(result).not.toBeNull();
+      expect(result!.errorData).toEqual({ details: 'The session has been invalidated because the user changed their password.' });
+    });
+
+    it('captures details from error_data.details', () => {
+      const result = parseMetaError(tokenExpiredBody);
+      expect(result).not.toBeNull();
+      expect(result!.details).toBe('The session has been invalidated because the user changed their password.');
+    });
+
+    it('handles error without subcode or user fields', () => {
+      const body = JSON.stringify({
+        error: { code: 2, type: 'OAuthException', message: 'fail', fbtrace_id: 'x' },
+      });
+      const result = parseMetaError(body);
+      expect(result).not.toBeNull();
+      expect(result!.errorSubcode).toBeUndefined();
+      expect(result!.errorUserTitle).toBeUndefined();
+      expect(result!.errorUserMsg).toBeUndefined();
+    });
+  });
 });
 
 describe('logInteractivePayloadDiagnostic', () => {

@@ -12,15 +12,64 @@ import { fetchWithRetry } from '@/app/lib/retry';
 import { trackEvent } from '@/app/lib/conversationTracker';
 import { metrics } from '@/app/lib/metrics';
 import { required } from '@/app/lib/env';
-import { META_LIMITS, igQuickReplyTitle, parseMetaError } from '@/app/lib/metaValidation';
+import { META_LIMITS, igQuickReplyTitle, parseMetaError, type MetaErrorInfo } from '@/app/lib/metaValidation';
 
 const INSTAGRAM_TOKEN = required('INSTAGRAM_TOKEN');
+
+function logTokenDiagnostic(): void {
+  const prefix = INSTAGRAM_TOKEN.length >= 3 ? INSTAGRAM_TOKEN.slice(0, 3) : '???';
+  logger.info('[Instagram] Token diagnostic', {
+    length: INSTAGRAM_TOKEN.length,
+    prefix,
+    looksLikePageToken: prefix === 'EAA',
+    looksLikeIgToken: prefix === 'IGQ',
+    isEmpty: INSTAGRAM_TOKEN.length === 0,
+  });
+}
+logTokenDiagnostic();
 
 const IG_URL = () => `https://graph.facebook.com/v21.0/me/messages`;
 const IG_HEADERS = () => ({
   Authorization: `Bearer ${INSTAGRAM_TOKEN}`,
   'Content-Type': 'application/json',
 });
+
+function formatMetaError(err: MetaErrorInfo): Record<string, unknown> {
+  return {
+    code: err.code,
+    subcode: err.errorSubcode,
+    type: err.type,
+    message: err.message,
+    errorUserTitle: err.errorUserTitle,
+    errorUserMsg: err.errorUserMsg,
+    details: err.details,
+    fbtraceId: err.fbtraceId,
+  };
+}
+
+function logMetaFailure(status: number, metaErr: MetaErrorInfo | undefined, cid: string): void {
+  const base: Record<string, unknown> = { status, correlationId: cid };
+  if (metaErr) {
+    base.meta = formatMetaError(metaErr);
+  }
+  if (status === 401) {
+    const hints: string[] = [];
+    hints.push('expired Page Token');
+    hints.push('wrong Facebook Page');
+    hints.push('missing instagram_manage_messages permission');
+    hints.push('Page disconnected from Instagram');
+    hints.push('token has wrong type (not a Page Access Token)');
+    if (metaErr?.errorSubcode === 190) hints.push('token expired or invalidated');
+    if (metaErr?.errorSubcode === 460) hints.push('token invalidated by password change');
+    base.likelyCauses = hints;
+    logger.error('[MetaAPI] Instagram 401 — token rejected', base);
+  } else if (status === 403) {
+    base.likelyCauses = 'App may not have Advanced Access for instagram_manage_messages';
+    logger.error('[MetaAPI] Instagram 403 — permission denied', base);
+  } else {
+    logger.error('[MetaAPI] Instagram API error', base);
+  }
+}
 
 async function callMetaApi(url: string, headers: Record<string, string>, payload: unknown, cid: string): Promise<Response> {
   const start = Date.now();
@@ -34,11 +83,13 @@ async function callMetaApi(url: string, headers: Record<string, string>, payload
 
   const resBody = res.ok ? '' : await res.clone().text().catch(() => '');
   const metaErr = resBody ? parseMetaError(resBody) : undefined;
-  logger.info('[MetaAPI] Instagram sent', {
-    correlationId: cid, duration, status: res.status, ok: res.ok,
-    error: resBody || undefined,
-    ...(metaErr ? { metaCode: metaErr.code, metaType: metaErr.type, metaMessage: metaErr.message, metaTrace: metaErr.fbtraceId } : {}),
-  });
+  if (res.ok) {
+    logger.info('[MetaAPI] Instagram reply sent', {
+      correlationId: cid, duration, status: res.status,
+    });
+  } else {
+    logMetaFailure(res.status, metaErr ?? undefined, cid);
+  }
 
   return res;
 }
@@ -65,12 +116,15 @@ function makeInstagramAdapter(cid: string): BotAdapter {
     async sendText(to, text) {
       // Strip ig_ prefix to get raw PSID for Meta API
       const recipientId = to.replace(/^ig_/, '');
-      const payload = { recipient: { id: recipientId }, message: { text } };
+      const payload = { messaging_type: 'RESPONSE', recipient: { id: recipientId }, message: { text } };
       try {
         const res = await callMetaApi(IG_URL(), IG_HEADERS(), payload, cid);
         if (!res.ok) {
-          logger.error('IG sendText failed', { status: res.status, correlationId: cid });
-          throw new Error(`Instagram sendText failed with status ${res.status}`);
+          const errBody = await res.clone().text().catch(() => '');
+          const metaErr = errBody ? parseMetaError(errBody) : undefined;
+          logMetaFailure(res.status, metaErr ?? undefined, cid);
+          const msg = metaErr?.message || `Instagram sendText failed with status ${res.status}`;
+          throw new Error(msg);
         }
       } catch (err) {
         logger.error('IG sendText error', { error: String(err), correlationId: cid });
@@ -91,6 +145,7 @@ function makeInstagramAdapter(cid: string): BotAdapter {
       try {
         if (fitsQuickReplies) {
           const payload = {
+            messaging_type: 'RESPONSE',
             recipient: { id: recipientId },
             message: {
               text: 'اختر / Choose:',
@@ -103,13 +158,10 @@ function makeInstagramAdapter(cid: string): BotAdapter {
           };
           const res = await callMetaApi(IG_URL(), IG_HEADERS(), payload, cid);
           if (!res.ok) {
-            const errBody = await res.text().catch(() => '');
-            const metaErr = parseMetaError(errBody);
-            logger.error('IG sendList quick_replies rejected', {
-              status: res.status, error: errBody, correlationId: cid,
-              ...(metaErr ? { metaCode: metaErr.code, metaType: metaErr.type, metaMessage: metaErr.message, metaTrace: metaErr.fbtraceId } : {}),
-            });
-            throw new Error(errBody);
+            const errBody = await res.clone().text().catch(() => '');
+            const metaErr = errBody ? parseMetaError(errBody) : undefined;
+            logMetaFailure(res.status, metaErr ?? undefined, cid);
+            throw new Error(metaErr?.message || errBody || `status ${res.status}`);
           }
         } else {
           throw new Error('Too many rows for Instagram quick replies');
