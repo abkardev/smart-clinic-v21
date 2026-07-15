@@ -95,6 +95,7 @@ async function callMetaApi(url: string, headers: Record<string, string>, payload
 }
 
 function verifySignature(rawBody: string, signatureHeader: string | null): boolean {
+
   if (!signatureHeader) return false;
   const appSecret = process.env.INSTAGRAM_APP_SECRET;
   if (!appSecret) {
@@ -200,6 +201,11 @@ export async function POST(req: NextRequest) {
 
   const rawBody = await req.text().catch(() => '');
   logger.debug('[Webhook] Instagram raw body', { webhookId, rawBodySize: rawBody.length, rawBodyPreview: rawBody.slice(0, 500) });
+   logger.info('IG Headers', {
+    webhookId,
+    signature256: req.headers.get('x-hub-signature-256'),
+    signature1: req.headers.get('x-hub-signature'),
+  });
   let body: any = null;
   try { body = JSON.parse(rawBody); } catch {
     logger.warn('[Webhook] Instagram — invalid JSON body, returning EVENT_RECEIVED', { webhookId, rawBodySize: rawBody.length });
