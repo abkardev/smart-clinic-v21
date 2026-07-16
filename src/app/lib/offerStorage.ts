@@ -19,6 +19,7 @@
 
 import { promises as fs } from 'fs';
 import path from 'path';
+import { logger } from './logger';
 
 export interface UploadResult {
   url: string; // what gets saved into Offer.imageUrl
@@ -82,7 +83,7 @@ export async function deleteOfferImage(imageUrl: string | null | undefined): Pro
     // Any other format (e.g. a legacy URL from a host migration) is left
     // alone — there's nothing safe to do with it automatically.
   } catch (err) {
-    console.error('Failed to delete offer image:', err);
+    logger.error('Failed to delete offer image', { error: String(err) });
     // non-fatal — see function doc comment above
   }
 }

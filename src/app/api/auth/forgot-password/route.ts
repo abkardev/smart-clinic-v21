@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import { prisma } from '@/app/lib/prisma';
 import { checkRateLimit } from '@/app/lib/rateLimit';
 import { optional } from '@/app/lib/env';
+import { logger } from '@/app/lib/logger';
 
 export async function POST(req: NextRequest) {
   try {
@@ -33,12 +34,14 @@ export async function POST(req: NextRequest) {
 
       const baseUrl = optional('NEXT_PUBLIC_APP_URL') || 'http://localhost:3000';
       const resetUrl = `${baseUrl}/reset-password/${token}`;
-      console.log(`[DEV] Reset URL for ${user.email}: ${resetUrl}`);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`[DEV] Reset URL for ${user.email}: ${resetUrl}`);
+      }
     }
 
     return NextResponse.json({ message: 'If an account with that email exists, a password reset link has been sent.' });
   } catch (err) {
-    console.error(err);
+    logger.error('Forgot password error', { error: String(err) });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }

@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
 import { getAuthUser } from '@/app/lib/auth';
 import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
+import { logger } from '@/app/lib/logger';
 
 interface DoctorBody {
   nameEn: string; nameAr: string;
@@ -25,7 +26,7 @@ export async function GET() {
     });
     return NextResponse.json(doctors);
   } catch (err) {
-    console.error(err);
+    logger.error('Failed to fetch doctors', { error: String(err) });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }
@@ -33,6 +34,8 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const { user, error } = await getAuthUser(req);
   if (error) return error;
+  const roleError = requireRole(user!, 'superadmin', 'admin');
+  if (roleError) return roleError;
 
   try {
     const body = await req.json() as DoctorBody;
@@ -64,7 +67,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(doctor, { status: 201 });
   } catch (err) {
-    console.error(err);
+    logger.error('Failed to create doctor', { error: String(err) });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }

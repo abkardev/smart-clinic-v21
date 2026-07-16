@@ -3,10 +3,12 @@ export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
+import { getAuthUser, requireRole } from '@/app/lib/auth';
 import { getAvailableSlots } from '@/app/lib/availability';
 import type { BookingStatus, BookingSource } from '@prisma/client';
 import { apiResponse, toDbStatus } from '@/app/lib/apiResponse';
 import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
+import { logger } from '@/app/lib/logger';
 import { metrics } from '@/app/lib/metrics';
 
 const doctorSelect = {
@@ -15,6 +17,11 @@ const doctorSelect = {
 
 // GET /api/bookings
 export async function GET(req: NextRequest) {
+  const { user, error } = await getAuthUser(req);
+  if (error) return error;
+  const roleError = requireRole(user!, 'superadmin', 'admin');
+  if (roleError) return roleError;
+
   try {
     const { searchParams } = new URL(req.url);
     const doctorId  = searchParams.get('doctorId');
@@ -74,13 +81,18 @@ export async function GET(req: NextRequest) {
       totalPages: Math.ceil(total / pageSize),
     });
   } catch (err) {
-    console.error(err);
+    logger.error('Failed to fetch bookings', { error: String(err) });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }
 
 // POST /api/bookings
 export async function POST(req: NextRequest) {
+  const { user, error } = await getAuthUser(req);
+  if (error) return error;
+  const roleError = requireRole(user!, 'superadmin', 'admin');
+  if (roleError) return roleError;
+
   const reqStart = Date.now();
   try {
     const body = await req.json() as {
@@ -137,9 +149,10 @@ export async function POST(req: NextRequest) {
   } catch (err: unknown) {
     metrics.bookingsFailed.inc();
     const e = err as { code?: string; message?: string };
+    logger.error('Failed to create booking', { error: String(err) });
     if (e.code === 'P2002') {
       return NextResponse.json({ message: 'This time slot is already booked' }, { status: 409 });
     }
-    return NextResponse.json({ message: e.message ?? 'Server error' }, { status: 400 });
+    return NextResponse.json({ message: 'Server error' }, { status: 400 });
   }
 }

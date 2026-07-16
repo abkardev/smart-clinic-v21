@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { required } from './env';
+import { logger } from './logger';
 
 const REQUIRED_STARTUP_VARS = ['DATABASE_URL', 'JWT_SECRET'];
 const missingCfg: string[] = [];
@@ -12,7 +13,7 @@ if (missingCfg.length > 0) {
     `\n  Startup failed — missing required environment variable(s):\n` +
     missingCfg.map((n) => `    • ${n}`).join('\n') +
     `\n\n  Set them in your .env.local or deployment environment variables.\n`;
-  console.error(msg);
+  logger.error('Startup configuration error', { message: msg });
   throw new Error(`Missing required environment variables: ${missingCfg.join(', ')}`);
 }
 

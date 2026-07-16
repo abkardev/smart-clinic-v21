@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
 import { getAuthUser, requireRole } from '@/app/lib/auth';
 import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
+import { logger } from '@/app/lib/logger';
 import type { HolidayType } from '@prisma/client';
 
 interface HolidayBody {
@@ -31,7 +32,7 @@ export async function GET() {
     }));
     return NextResponse.json(shaped);
   } catch (err) {
-    console.error(err);
+    logger.error('Failed to fetch holidays', { error: String(err) });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest) {
     await logAudit(AuditAction.HOLIDAY_CREATED, 'Holiday', holiday.id, { type }, auditOptsFromRequest(req, user!));
     return NextResponse.json(holiday, { status: 201 });
   } catch (err) {
-    console.error(err);
+    logger.error('Failed to create holiday', { error: String(err) });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }

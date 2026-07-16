@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
 import { getAuthUser, requireRole } from '@/app/lib/auth';
 import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
+import { logger } from '@/app/lib/logger';
 
 // GET /api/blocked-slots
 export async function GET(req: NextRequest) {
@@ -33,7 +34,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(slots);
   } catch (err) {
-    console.error(err);
+    logger.error('Failed to fetch blocked slots', { error: String(err) });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }
@@ -90,7 +91,7 @@ export async function POST(req: NextRequest) {
         data: { syncedToGoogle: true, googleEventId: event.data.id ?? null },
       });
     } catch (gErr) {
-      console.error('Google Calendar block sync failed:', (gErr as Error).message);
+      logger.error('Google Calendar block sync failed', { error: String(gErr) });
     }
 
     await logAudit(AuditAction.SLOT_BLOCKED, 'BlockedSlot', slot.id, { doctorId, date, time, reason }, auditOptsFromRequest(req, user!));
@@ -98,6 +99,7 @@ export async function POST(req: NextRequest) {
   } catch (err: unknown) {
     const e = err as { code?: string; message?: string };
     if (e.code === 'P2002') return NextResponse.json({ message: 'Slot already blocked' }, { status: 409 });
-    return NextResponse.json({ message: e.message ?? 'Server error' }, { status: 400 });
+    logger.error('Failed to create blocked slot', { error: String(err) });
+    return NextResponse.json({ message: 'Server error' }, { status: 400 });
   }
 }

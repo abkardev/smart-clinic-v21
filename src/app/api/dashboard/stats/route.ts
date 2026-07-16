@@ -2,11 +2,18 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
+import { getAuthUser, requireRole } from '@/app/lib/auth';
 import { apiResponse } from '@/app/lib/apiResponse';
+import { logger } from '@/app/lib/logger';
 import { BookingSource } from '@prisma/client';
 
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   try {
+    const { user, error } = await getAuthUser(req);
+    if (error) return error;
+    const roleError = requireRole(user!, 'superadmin', 'admin');
+    if (roleError) return roleError;
+
     const today = new Date().toISOString().split('T')[0];
     const thisMonth = today.slice(0, 7);
 
@@ -95,7 +102,7 @@ export async function GET(_req: NextRequest) {
       byDoctor,
     });
   } catch (err) {
-    console.error(err);
+    logger.error('Failed to fetch dashboard stats', { error: String(err) });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }

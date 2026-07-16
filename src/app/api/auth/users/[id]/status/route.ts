@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
 import { getAuthUser, requireRole } from '@/app/lib/auth';
 import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
+import { logger } from '@/app/lib/logger';
 import { UserStatus } from '@prisma/client';
 
 // PATCH /api/auth/users/[id]/status
@@ -44,7 +45,7 @@ export async function PATCH(
 
     return NextResponse.json({ message: `User ${status}`, user: updated });
   } catch (err) {
-    console.error(err);
+    logger.error('Failed to update user status', { error: String(err), userId: params.id });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }

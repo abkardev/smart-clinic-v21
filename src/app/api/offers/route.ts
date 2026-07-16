@@ -5,6 +5,7 @@ import { uploadOfferImage } from '@/app/lib/offerStorage';
 import { prisma } from '@/app/lib/prisma';
 import { getAuthUser, requireRole } from '@/app/lib/auth';
 import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
+import { logger } from '@/app/lib/logger';
 
 // GET /api/offers
 export async function GET(req: NextRequest) {
@@ -18,7 +19,7 @@ export async function GET(req: NextRequest) {
     });
     return NextResponse.json(offers);
   } catch (err) {
-    console.error(err);
+    logger.error('Failed to fetch offers', { error: String(err) });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }
@@ -66,7 +67,7 @@ export async function POST(req: NextRequest) {
     await logAudit(AuditAction.OFFER_CREATED, 'Offer', offer.id, { titleEn }, auditOptsFromRequest(req, user!));
     return NextResponse.json(offer, { status: 201 });
   } catch (err) {
-    console.error(err);
+    logger.error('Failed to create offer', { error: String(err) });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }

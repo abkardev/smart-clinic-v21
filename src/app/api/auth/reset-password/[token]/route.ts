@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import { prisma } from '@/app/lib/prisma';
 import { hashPassword } from '@/app/lib/auth';
 import { checkRateLimit } from '@/app/lib/rateLimit';
+import { logger } from '@/app/lib/logger';
 
 export async function POST(
   req: NextRequest,
@@ -46,7 +47,7 @@ export async function POST(
 
     return NextResponse.json({ message: 'Password reset successful.' });
   } catch (err) {
-    console.error(err);
+    logger.error('Reset password error', { error: String(err) });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }

@@ -1,5 +1,6 @@
 import { Prisma, AuditStatus } from '@prisma/client';
 import { prisma } from './prisma';
+import { logger } from './logger';
 
 // ─── Strongly typed enums ─────────────────────────────────────────────────────
 
@@ -265,7 +266,7 @@ export async function logAudit(
       },
     });
   } catch (err) {
-    console.error('Audit log error:', err);
+    logger.error('Audit log error', { error: String(err) });
   }
 }
 

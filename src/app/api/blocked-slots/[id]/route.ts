@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
 import { getAuthUser, requireRole } from '@/app/lib/auth';
 import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
+import { logger } from '@/app/lib/logger';
 
 // DELETE /api/blocked-slots/[id]
 export async function DELETE(
@@ -35,7 +36,7 @@ export async function DELETE(
           eventId: slot.googleEventId,
         });
       } catch (gErr) {
-        console.error('Google Calendar unblock sync failed:', (gErr as Error).message);
+        logger.error('Google Calendar unblock sync failed', { error: String(gErr) });
       }
     }
 
@@ -44,7 +45,7 @@ export async function DELETE(
 
     return NextResponse.json({ message: 'Slot unblocked' });
   } catch (err) {
-    console.error(err);
+    logger.error('Failed to unblock slot', { error: String(err), slotId: params.id });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }

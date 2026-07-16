@@ -4,6 +4,7 @@ export const maxDuration = 60;
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
 import { getAuthUser } from '@/app/lib/auth';
+import { logger } from '@/app/lib/logger';
 import { MSG } from '@/app/lib/botMessages';
 import { required } from '@/app/lib/env';
 
@@ -54,7 +55,7 @@ export async function POST(
 
     if (!res.ok) {
       const err = await res.json();
-      console.error('WA reminder error:', err);
+      logger.error('WA reminder error', { error: JSON.stringify(err) });
       return NextResponse.json({ message: 'Failed to send reminder', detail: err }, { status: 502 });
     }
 
@@ -65,7 +66,7 @@ export async function POST(
 
     return NextResponse.json({ message: 'Reminder sent successfully' });
   } catch (err) {
-    console.error(err);
+    logger.error('Failed to send reminder', { error: String(err), bookingId: params.id });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }

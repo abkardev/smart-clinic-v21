@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
 import { getAvailableSlots } from '@/app/lib/availability';
 import { apiResponse } from '@/app/lib/apiResponse';
+import { logger } from '@/app/lib/logger';
 
 // GET /api/bookings/available-slots?doctorId=...&date=...
 export async function GET(req: NextRequest) {
@@ -22,7 +23,7 @@ export async function GET(req: NextRequest) {
     const result = await getAvailableSlots(doctor, date);
     return apiResponse(result);
   } catch (err) {
-    console.error(err);
+    logger.error('Failed to fetch available slots', { error: String(err) });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }

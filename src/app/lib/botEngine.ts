@@ -1,5 +1,5 @@
 import { prisma } from './prisma';
-import { getAvailableSlots, listUpcomingDays } from './availability';
+import { getAvailableSlots, listUpcomingDays, formatTimeForAr, formatTimeForEn, DayStatus, findNearestAppointment, BOOKING_WINDOW_DAYS } from './availability';
 import {
   MSG, CALL_TIMES, SERVICES_BILINGUAL, TRIGGERS,
   BookingData, STEP_ORDER, NAVIGATION_IDS, EDIT_FIELD_MAP,
@@ -145,18 +145,92 @@ async function sendServicesList(userId: string, data: BookingData, adapter: BotA
   ]);
 }
 
+// ─── Presentation helpers (DOW labels — moved from availability.ts) ──────────
+
+const DOW_LABELS_AR = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+const DOW_LABELS_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function getDayLabelAr(d: { date: string; isToday: boolean; isTomorrow: boolean }): string {
+  if (d.isToday) return 'اليوم';
+  if (d.isTomorrow) return 'غداً';
+  const date = new Date(d.date);
+  return `${DOW_LABELS_AR[date.getDay()]} ${date.getDate()} ${date.toLocaleDateString('ar-SA', { month: 'long' })}`;
+}
+
+function getDayLabelEn(d: { date: string; isToday: boolean; isTomorrow: boolean }): string {
+  if (d.isToday) return 'Today';
+  if (d.isTomorrow) return 'Tomorrow';
+  const date = new Date(d.date);
+  return `${DOW_LABELS_EN[date.getDay()]}, ${date.toLocaleDateString('en-US', { month: 'short' })} ${date.getDate()}`;
+}
+
+const DAY_STATUS_TEXT_AR: Record<DayStatus, string> = {
+  [DayStatus.AVAILABLE]: '',
+  [DayStatus.FULLY_BOOKED]: 'ممتلئ',
+  [DayStatus.HOLIDAY]: 'إجازة',
+  [DayStatus.BLOCKED]: 'مغلق',
+  [DayStatus.NOT_WORKING_DAY]: 'لا يعمل',
+};
+
+const DAY_STATUS_TEXT_EN: Record<DayStatus, string> = {
+  [DayStatus.AVAILABLE]: '',
+  [DayStatus.FULLY_BOOKED]: 'Fully Booked',
+  [DayStatus.HOLIDAY]: 'Day Off',
+  [DayStatus.BLOCKED]: 'Blocked',
+  [DayStatus.NOT_WORKING_DAY]: 'Not Working',
+};
+
+function getDayStatusTextAr(status: DayStatus): string {
+  return DAY_STATUS_TEXT_AR[status];
+}
+
+function getDayStatusTextEn(status: DayStatus): string {
+  return DAY_STATUS_TEXT_EN[status];
+}
+
+// ─── Date picker ─────────────────────────────────────────────────────────────
+
 async function sendDatePicker(userId: string, data: BookingData, adapter: BotAdapter) {
   const doc = await prisma.doctor.findUnique({ where: { id: data.doctorId! } });
   if (!doc) return adapter.sendText(userId, MSG.error);
-  const days = await listUpcomingDays(doc, 7);
-  const openDays = days.filter(d => d.availableCount > 0);
-  if (!openDays.length) return adapter.sendText(userId, MSG.noUpcomingAvailability);
+
+  // Single availability pass — reused for both nearest appointment and list
+  const days = await listUpcomingDays(doc, BOOKING_WINDOW_DAYS);
+  const visibleDays = days.filter(d => d.status !== DayStatus.NOT_WORKING_DAY);
+  if (!visibleDays.length) return adapter.sendText(userId, MSG.noUpcomingAvailability);
+
+  // Show nearest available appointment before the list
+  const nearest = findNearestAppointment(visibleDays);
+  if (nearest) {
+    const nearestDay = visibleDays.find(d => d.date === nearest.date)!;
+    await adapter.sendText(userId, bi(
+      `✅ *أقرب موعد متاح*\n${getDayLabelAr(nearestDay)}\n${formatTimeForAr(nearest.time)}`,
+      `*Next Available Appointment*\n${getDayLabelEn(nearestDay)}\n${formatTimeForEn(nearest.time)}`
+    ));
+  }
+
   return adapter.sendList(userId, waHeader(bi('اختر اليوم', 'Choose Day')), MSG.selectDate, waButtonLabel('اختر', 'Choose'), [
-    { title: waSectionTitle('الأيام المتاحة', 'Available Days'), rows: openDays.map(d => ({
-      id: `date_${d.date}`,
-      title: waRowTitle(d.labelAr, d.labelEn),
-      description: waRowDescription(`${d.availableCount} ${d.availableCount === 1 ? 'موعد' : 'مواعيد'}`, `${d.availableCount} ${d.availableCount === 1 ? 'slot' : 'slots'}`),
-    })) },
+    {
+      title: waSectionTitle('الأيام', 'Days'),
+      rows: visibleDays.map(d => {
+        const labelAr = getDayLabelAr(d);
+        const labelEn = getDayLabelEn(d);
+        let descAr: string;
+        let descEn: string;
+        if (d.status === DayStatus.AVAILABLE && d.firstSlot) {
+          descAr = `${d.availableCount} ${d.availableCount === 1 ? 'موعد' : 'مواعيد'} • أول موعد ${formatTimeForAr(d.firstSlot)}`;
+          descEn = `${d.availableCount} ${d.availableCount === 1 ? 'slot' : 'slots'} • First at ${formatTimeForEn(d.firstSlot)}`;
+        } else {
+          descAr = getDayStatusTextAr(d.status);
+          descEn = getDayStatusTextEn(d.status);
+        }
+        return {
+          id: `date_${d.date}`,
+          title: `📅 ${labelAr}`,
+          description: waRowDescription(descAr, descEn),
+        };
+      }),
+    },
     navigationSection(),
   ]);
 }

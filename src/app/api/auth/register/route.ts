@@ -5,6 +5,7 @@ import { prisma } from '@/app/lib/prisma';
 import type { UserRole, UserStatus } from '@prisma/client';
 import { hashPassword } from '@/app/lib/auth';
 import { checkRateLimit } from '@/app/lib/rateLimit';
+import { logger } from '@/app/lib/logger';
 
 export async function POST(req: NextRequest) {
   try {
@@ -71,7 +72,7 @@ export async function POST(req: NextRequest) {
       { status: 201 }
     );
   } catch (err) {
-    console.error(err);
+    logger.error('Registration error', { error: String(err) });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }

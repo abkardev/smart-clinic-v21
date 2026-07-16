@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
 import { getAuthUser, requireRole } from '@/app/lib/auth';
+import { logger } from '@/app/lib/logger';
 
 // GET /api/auth/users  — list users (admin+)
 export async function GET(req: NextRequest) {
@@ -33,7 +34,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(users);
   } catch (err) {
-    console.error(err);
+    logger.error('Failed to list users', { error: String(err) });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }

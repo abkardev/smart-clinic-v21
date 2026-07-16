@@ -3,8 +3,10 @@ export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
+import { getAuthUser, requireRole } from '@/app/lib/auth';
 import { apiResponse, toDbStatus } from '@/app/lib/apiResponse';
 import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
+import { logger } from '@/app/lib/logger';
 import type { BookingStatus, BookingSource } from '@prisma/client';
 
 const doctorSelect = {
@@ -19,10 +21,13 @@ interface BookingBody {
 }
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
+    const { error } = await getAuthUser(req);
+    if (error) return error;
+
     const booking = await prisma.booking.findUnique({
       where: { id: params.id },
       include: { doctor: true },
@@ -31,7 +36,7 @@ export async function GET(
     const { doctor, ...rest } = booking;
     return apiResponse({ ...rest, doctorId: doctor });
   } catch (err) {
-    console.error(err);
+    logger.error('Failed to fetch booking', { error: String(err), bookingId: params.id });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }
@@ -41,6 +46,11 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
+    const { user, error } = await getAuthUser(req);
+    if (error) return error;
+    const roleError = requireRole(user!, 'superadmin', 'admin');
+    if (roleError) return roleError;
+
     const body = await req.json() as BookingBody;
     const before = await prisma.booking.findUnique({ where: { id: params.id } });
     const booking = await prisma.booking.update({
@@ -95,6 +105,11 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
+    const { user, error } = await getAuthUser(req);
+    if (error) return error;
+    const roleError = requireRole(user!, 'superadmin', 'admin');
+    if (roleError) return roleError;
+
     const booking = await prisma.booking.findUnique({
       where: { id: params.id },
       include: { doctor: true },
@@ -115,7 +130,7 @@ export async function DELETE(
     );
     return NextResponse.json({ message: 'Booking deleted' });
   } catch (err) {
-    console.error(err);
+    logger.error('Failed to delete booking', { error: String(err), bookingId: params.id });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }

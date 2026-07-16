@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
 import { getAuthUser, requireRole } from '@/app/lib/auth';
+import { logger } from '@/app/lib/logger';
 
 const MAX_LIMIT = 200;
 
@@ -66,7 +67,7 @@ export async function GET(req: NextRequest) {
       pages: Math.ceil(total / limit),
     });
   } catch (err) {
-    console.error(err);
+    logger.error('Failed to fetch audit logs', { error: String(err) });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }

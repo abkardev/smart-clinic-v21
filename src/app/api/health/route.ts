@@ -23,8 +23,8 @@ async function checkDatabase(): Promise<CheckResult> {
   try {
     await prisma.$queryRaw`SELECT 1`;
     return { status: 'healthy', latencyMs: Date.now() - start };
-  } catch (err) {
-    return { status: 'unhealthy', latencyMs: Date.now() - start, message: (err as Error).message };
+  } catch {
+    return { status: 'unhealthy', latencyMs: Date.now() - start, message: 'Database unavailable' };
   }
 }
 
@@ -141,13 +141,12 @@ export async function GET(req: NextRequest) {
 
     const statusCode = overall === 'unhealthy' ? 503 : overall === 'degraded' ? 200 : 200;
     return NextResponse.json(response, { status: statusCode });
-  } catch (err) {
+  } catch {
     return NextResponse.json(
       {
         status: 'unhealthy',
         timestamp: new Date().toISOString(),
         error: 'health check crashed',
-        detail: (err as Error).message,
       },
       { status: 503 }
     );

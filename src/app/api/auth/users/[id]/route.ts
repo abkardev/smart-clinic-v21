@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
 import { getAuthUser, requireRole } from '@/app/lib/auth';
 import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
+import { logger } from '@/app/lib/logger';
 
 // DELETE /api/auth/users/[id]
 export async function DELETE(
@@ -24,7 +25,7 @@ export async function DELETE(
 
     return NextResponse.json({ message: 'User deleted' });
   } catch (err) {
-    console.error(err);
+    logger.error('Failed to delete user', { error: String(err), userId: params.id });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }

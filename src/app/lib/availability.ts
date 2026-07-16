@@ -47,6 +47,29 @@ export function generateTimeSlots(
   return slots;
 }
 
+// ─── Time formatting helpers (clinic locale) ──────────────────────────────────
+
+const ARABIC_DIGITS = '٠١٢٣٤٥٦٧٨٩';
+
+export function toArabicDigit(n: number): string {
+  return String(n).replace(/\d/g, d => ARABIC_DIGITS[parseInt(d, 10)]);
+}
+
+export function formatTimeForAr(time: string): string {
+  const [hStr, mStr] = time.split(':');
+  const h = parseInt(hStr, 10);
+  const period = h >= 12 ? 'مساءً' : 'صباحاً';
+  const h12 = h % 12 || 12;
+  return `${toArabicDigit(h12)}:${mStr.replace(/\d/g, d => ARABIC_DIGITS[parseInt(d, 10)])} ${period}`;
+}
+
+export function formatTimeForEn(time: string): string {
+  const [h, m] = time.split(':').map(Number);
+  const period = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 || 12;
+  return `${h12}:${String(m).padStart(2, '0')} ${period}`;
+}
+
 // ─── Google Calendar free/busy lookup ─────────────────────────────────────────
 // PERFORMANCE FIX: short-circuit immediately when Google Calendar isn't
 // configured. Previously this always dynamically imported the ~30MB
@@ -153,9 +176,18 @@ export async function getAvailableSlots(doctor: Doctor, date: string): Promise<S
     return { available: [], all: allSlots, reason: 'blocked' };
   }
 
+  // ── Expired slot filter (today only) ──────────────────────────────────────
+  const now = new Date();
+  const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const isToday = date === todayLocal;
+
   const googleBusy = await getGoogleBusySlots(doctor.calendarId, date);
 
   const available = allSlots.filter((slot) => {
+    if (isToday) {
+      const nowMinutes = now.getHours() * 60 + now.getMinutes();
+      if (toMinutes(slot) <= nowMinutes) return false;
+    }
     if (dbBusy.has(slot) || blockedTimes.has(slot)) return false;
     const ss = new Date(`${date}T${slot}:00`);
     const se = new Date(ss.getTime() + doctor.slotDuration * 60000);
@@ -201,56 +233,115 @@ export async function suggestAlternativeDates(
   return suggestions;
 }
 
-const DOW_LABELS_AR = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
-const DOW_LABELS_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+// ─── Booking window configuration ────────────────────────────────────────────
+
+const SUPPORTED_WINDOWS = [7, 14, 21, 30, 60];
+
+function parseBookingWindow(): number {
+  const raw = process.env.BOOKING_WINDOW_DAYS;
+  if (raw) {
+    const n = parseInt(raw, 10);
+    if (SUPPORTED_WINDOWS.includes(n)) return n;
+  }
+  return 14;
+}
+
+export const BOOKING_WINDOW_DAYS = parseBookingWindow();
+
+// ─── Domain types (pure business, no UI strings) ─────────────────────────────
+
+export enum DayStatus {
+  AVAILABLE = 'AVAILABLE',
+  FULLY_BOOKED = 'FULLY_BOOKED',
+  HOLIDAY = 'HOLIDAY',
+  BLOCKED = 'BLOCKED',
+  NOT_WORKING_DAY = 'NOT_WORKING_DAY',
+}
 
 export interface UpcomingDay {
-  date: string;          // YYYY-MM-DD
-  dayOfWeek: number;     // 0-6
-  labelAr: string;       // e.g. "الأحد 28 يونيو"
-  labelEn: string;       // e.g. "Sun, Jun 28"
+  date: string;                // YYYY-MM-DD
+  status: DayStatus;
   availableCount: number;
+  firstSlot: string | null;    // "09:00" or null
+  lastSlot: string | null;     // "16:30" or null
+  isToday: boolean;
+  isTomorrow: boolean;
+  // Future extensibility — reserved (unused, no-op)
+  // doctorName?: string;
+  // branch?: string;
+  // specialty?: string;
+  // estimatedDuration?: number;
+  // price?: number;
+  // capacityRemaining?: number;
+}
+
+export interface NearestAppointment {
+  date: string;    // YYYY-MM-DD
+  time: string;    // "09:00"
 }
 
 /**
- * Lists the next `daysAhead` calendar days for a doctor, each tagged with
- * how many open slots it has (0 means fully booked/holiday/non-working day).
- * This powers the click-based date picker in the WhatsApp/Instagram bots —
- * patients select a day from a list instead of typing a date manually.
+ * Scans a pre-computed UpcomingDay array and returns the earliest available
+ * slot. Pure function — O(n), no DB calls. Returns null when no slots exist.
+ */
+export function findNearestAppointment(days: UpcomingDay[]): NearestAppointment | null {
+  for (const day of days) {
+    if (day.status === DayStatus.AVAILABLE && day.firstSlot) {
+      return { date: day.date, time: day.firstSlot };
+    }
+  }
+  return null;
+}
+
+/**
+ * Lists the next `daysAhead` calendar days for a doctor.
+ * Returns structured data only — no UI strings, no translations.
+ * All formatting belongs in the presentation layer.
  */
 export async function listUpcomingDays(
   doctor: Doctor,
-  daysAhead = 7
+  daysAhead = BOOKING_WINDOW_DAYS
 ): Promise<UpcomingDay[]> {
   const today = new Date();
+  const todayLocal = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowLocal = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+
   const dateStrs: string[] = [];
   for (let i = 0; i < daysAhead; i++) {
     const d = new Date(today);
     d.setDate(d.getDate() + i);
-    dateStrs.push(d.toISOString().split('T')[0]);
+    dateStrs.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
   }
 
-  // Check availability for all days in parallel — this is a small, bounded
-  // batch (daysAhead is always a small constant), so no need for the
-  // batching pattern used in suggestAlternativeDates above.
+  // All availability checks run in parallel — single pass, O(n)
   const results = await Promise.all(
     dateStrs.map((dateStr) =>
-      getAvailableSlots(doctor, dateStr).then((r) => ({ dateStr, count: r.available.length }))
+      getAvailableSlots(doctor, dateStr).then((r) => ({ dateStr, ...r }))
     )
   );
 
-  return results.map(({ dateStr, count }) => {
-    const d = new Date(dateStr);
-    const dow = d.getDay();
-    const dayNum = d.getDate();
-    const monthAr = d.toLocaleDateString('ar-SA', { month: 'long' });
-    const monthEn = d.toLocaleDateString('en-US', { month: 'short' });
-    return {
-      date: dateStr,
-      dayOfWeek: dow,
-      labelAr: `${DOW_LABELS_AR[dow]} ${dayNum} ${monthAr}`,
-      labelEn: `${DOW_LABELS_EN[dow]}, ${monthEn} ${dayNum}`,
-      availableCount: count,
-    };
+  return results.map(({ dateStr, available, all, reason }) => {
+    const isToday = dateStr === todayLocal;
+    const isTomorrow = dateStr === tomorrowLocal;
+    const availableCount = available.length;
+    const firstSlot = availableCount > 0 ? available[0] : null;
+    const lastSlot = availableCount > 0 ? available[availableCount - 1] : null;
+
+    let status: DayStatus;
+    if (reason === 'holiday') {
+      status = DayStatus.HOLIDAY;
+    } else if (reason === 'blocked') {
+      status = DayStatus.BLOCKED;
+    } else if (reason === 'notWorkingDay') {
+      status = DayStatus.NOT_WORKING_DAY;
+    } else if (availableCount === 0) {
+      status = DayStatus.FULLY_BOOKED;
+    } else {
+      status = DayStatus.AVAILABLE;
+    }
+
+    return { date: dateStr, status, availableCount, firstSlot, lastSlot, isToday, isTomorrow };
   });
 }

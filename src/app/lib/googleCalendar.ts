@@ -1,4 +1,5 @@
 import { google } from './google';
+import { logger } from './logger';
 import type { Booking, Doctor } from '@prisma/client';
 import { metrics } from './metrics';
 
@@ -32,7 +33,7 @@ export async function createCalendarEvent(
       calendarLink: event.data.htmlLink ?? '',
     };
   } catch (err) {
-    console.error('Google Calendar createEvent failed:', (err as Error).message);
+    logger.error('Google Calendar createEvent failed', { error: String(err) });
     return null;
   }
 }
@@ -59,7 +60,7 @@ export async function updateCalendarEvent(
     });
     metrics.googleCalendarLatency.observe(Date.now() - start);
   } catch (err) {
-    console.error('Google Calendar updateEvent failed:', (err as Error).message);
+    logger.error('Google Calendar updateEvent failed', { error: String(err) });
   }
 }
 
@@ -70,6 +71,6 @@ export async function deleteCalendarEvent(
   try {
     await google.events.delete({ calendarId, eventId });
   } catch (err) {
-    console.error('Google Calendar deleteEvent failed:', (err as Error).message);
+    logger.error('Google Calendar deleteEvent failed', { error: String(err) });
   }
 }

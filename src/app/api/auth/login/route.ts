@@ -5,6 +5,7 @@ import { prisma } from '@/app/lib/prisma';
 import { signToken, comparePassword } from '@/app/lib/auth';
 import { logAudit, AuditAction} from '@/app/lib/audit';
 import { checkRateLimit } from '@/app/lib/rateLimit';
+import { logger } from '@/app/lib/logger';
 
 export async function POST(req: NextRequest) {
   try {
@@ -59,7 +60,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ token, user: safeUser });
   } catch (err) {
-    console.error(err);
+    logger.error('Login error', { error: String(err) });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }

@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
 import { getAuthUser } from '@/app/lib/auth';
 import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
+import { logger } from '@/app/lib/logger';
 
 interface DoctorBody {
   nameEn?: string; nameAr?: string;
@@ -26,7 +27,7 @@ export async function GET(
     if (!doctor) return NextResponse.json({ message: 'Doctor not found' }, { status: 404 });
     return NextResponse.json(doctor);
   } catch (err) {
-    console.error(err);
+    logger.error('Failed to fetch doctor', { error: String(err), doctorId: params.id });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }
@@ -37,6 +38,8 @@ export async function PUT(
 ) {
   const { user, error } = await getAuthUser(req);
   if (error) return error;
+  const roleError = requireRole(user!, 'superadmin', 'admin');
+  if (roleError) return roleError;
 
   try {
     // Capture before state for audit diff
@@ -94,6 +97,8 @@ export async function DELETE(
 ) {
   const { user, error } = await getAuthUser(req);
   if (error) return error;
+  const roleError = requireRole(user!, 'superadmin', 'admin');
+  if (roleError) return roleError;
 
   try {
     const before = await prisma.doctor.findUnique({ where: { id: params.id } });
@@ -106,7 +111,7 @@ export async function DELETE(
 
     return NextResponse.json({ message: 'Doctor deactivated' });
   } catch (err) {
-    console.error(err);
+    logger.error('Failed to deactivate doctor', { error: String(err), doctorId: params.id });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }

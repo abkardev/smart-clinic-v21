@@ -3,6 +3,7 @@ export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
+import { getAuthUser, requireRole } from '@/app/lib/auth';
 import { apiResponse, toDbStatus } from '@/app/lib/apiResponse';
 import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
 import { getAvailableSlots } from '@/app/lib/availability';
@@ -13,6 +14,11 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
+    const { user, error } = await getAuthUser(req);
+    if (error) return error;
+    const roleError = requireRole(user!, 'superadmin', 'admin');
+    if (roleError) return roleError;
+
     const { date, time } = await req.json() as { date: string; time: string };
 
     const booking = await prisma.booking.findUnique({
