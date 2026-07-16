@@ -6,7 +6,7 @@ import {
   Dialog, DialogTitle, DialogContent, DialogActions, Paper,
 } from '@mui/material';
 import { useLang } from '../context/AppContext.jsx';
-import { getDoctors, getBlockedSlots, blockSlot, unblockSlot, getBookings } from '../services/api.js';
+import { getDoctors, getBlockedSlots, blockSlot, unblockSlot, getBookings, extractArray } from '../services/api.js';
 import { CheckCircleRoundedIcon, EventBusyRoundedIcon, LockOpenRoundedIcon, LockRoundedIcon } from '../components/icons';
 
 function generateSlots(start, end, dur) {
@@ -56,8 +56,9 @@ export default function SlotManagerPage() {
         getBlockedSlots({ doctorId: selectedDoctor, date: selectedDate }),
         getBookings({ doctorId: selectedDoctor, date: selectedDate }),
       ]);
-      setBlockedList(bl.data || []);
-      setBookedTimes((bk.data || []).map((b) => b.time));
+      setBlockedList(extractArray(bl.data));
+      const rawBk = extractArray(bk.data);
+      setBookedTimes(rawBk.map((b) => b.time));
     } catch (err) {
       notify('Failed to load slot data', 'error');
     } finally {

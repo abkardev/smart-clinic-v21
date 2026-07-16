@@ -176,18 +176,18 @@ export async function getAvailableSlots(doctor: Doctor, date: string): Promise<S
     return { available: [], all: allSlots, reason: 'blocked' };
   }
 
-  // ── Expired slot filter (today only) ──────────────────────────────────────
-  const now = new Date();
-  const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const isToday = date === todayLocal;
+  // ── Time-sensitive filters (today only) ──────────────────────────────────
+  // Uses clinic timezone for all calculations — never relies on server time.
+  const clinicNow = getClinicNow(CLINIC_TIMEZONE);
+  const isToday = date === clinicNow.date;
+  const todayFiltered = isToday
+    ? new Set(filterTodaySlots(allSlots, clinicNow.minutes, BOOKING_BUFFER_MINUTES, MINIMUM_ADVANCE_BOOKING_HOURS))
+    : null;
 
   const googleBusy = await getGoogleBusySlots(doctor.calendarId, date);
 
   const available = allSlots.filter((slot) => {
-    if (isToday) {
-      const nowMinutes = now.getHours() * 60 + now.getMinutes();
-      if (toMinutes(slot) <= nowMinutes) return false;
-    }
+    if (todayFiltered && !todayFiltered.has(slot)) return false;
     if (dbBusy.has(slot) || blockedTimes.has(slot)) return false;
     const ss = new Date(`${date}T${slot}:00`);
     const se = new Date(ss.getTime() + doctor.slotDuration * 60000);
@@ -248,6 +248,66 @@ function parseBookingWindow(): number {
 
 export const BOOKING_WINDOW_DAYS = parseBookingWindow();
 
+// ─── Clinic timezone ─────────────────────────────────────────────────────────
+export const CLINIC_TIMEZONE = process.env.CLINIC_TIMEZONE || 'Asia/Riyadh';
+
+// ─── Booking buffer (minutes) ────────────────────────────────────────────────
+function parseBookingBuffer(): number {
+  const raw = process.env.BOOKING_BUFFER_MINUTES;
+  if (raw) {
+    const n = parseInt(raw, 10);
+    if (!isNaN(n) && n >= 0) return n;
+  }
+  return 0;
+}
+export const BOOKING_BUFFER_MINUTES = parseBookingBuffer();
+
+// ─── Minimum advance booking hours ───────────────────────────────────────────
+function parseMinimumAdvance(): number {
+  const raw = process.env.MINIMUM_ADVANCE_BOOKING_HOURS;
+  if (raw) {
+    const n = parseInt(raw, 10);
+    if (!isNaN(n) && n >= 0) return n;
+  }
+  return 3;
+}
+export const MINIMUM_ADVANCE_BOOKING_HOURS = parseMinimumAdvance();
+
+// ─── Clinic timezone-aware current time ─────────────────────────────────────
+export function getClinicNow(tz?: string): { date: string; minutes: number } {
+  const timezone = tz || CLINIC_TIMEZONE;
+  const nowStr = new Date().toLocaleString('sv-SE', { timeZone: timezone });
+  const [date, time] = nowStr.split(' ');
+  const [h, m] = time.split(':').map(Number);
+  return { date, minutes: h * 60 + m };
+}
+
+/**
+ * Pure function: filters today's slots using the combined cutoff from
+ * expired-slot, booking-buffer, and minimum-advance-booking rules.
+ * Only the strictest constraint applies.
+ */
+export function filterTodaySlots(
+  slots: string[],
+  nowMinutes: number,
+  bufferMinutes: number,
+  advanceHours: number
+): string[] {
+  const cutoff = Math.max(
+    nowMinutes + 1,
+    nowMinutes + bufferMinutes,
+    nowMinutes + advanceHours * 60
+  );
+  return slots.filter((s) => toMinutes(s) >= cutoff);
+}
+
+// ─── Date arithmetic (timezone-safe) ─────────────────────────────────────────
+function addDays(dateStr: string, n: number): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d + n));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+}
+
 // ─── Domain types (pure business, no UI strings) ─────────────────────────────
 
 export enum DayStatus {
@@ -302,17 +362,13 @@ export async function listUpcomingDays(
   doctor: Doctor,
   daysAhead = BOOKING_WINDOW_DAYS
 ): Promise<UpcomingDay[]> {
-  const today = new Date();
-  const todayLocal = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowLocal = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+  const clinicNow = getClinicNow(CLINIC_TIMEZONE);
+  const todayLocal = clinicNow.date;
+  const tomorrowLocal = addDays(todayLocal, 1);
 
   const dateStrs: string[] = [];
   for (let i = 0; i < daysAhead; i++) {
-    const d = new Date(today);
-    d.setDate(d.getDate() + i);
-    dateStrs.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+    dateStrs.push(addDays(todayLocal, i));
   }
 
   // All availability checks run in parallel — single pass, O(n)

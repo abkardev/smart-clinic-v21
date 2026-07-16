@@ -12,7 +12,7 @@ import { DataGrid } from '@mui/x-data-grid';
 
 
 import { useLang } from '../context/AppContext.jsx';
-import { getBookings, createBooking, updateBooking, deleteBooking, getDoctors, sendReminder, syncAllDoctors } from '../services/api.js';
+import { getBookings, createBooking, updateBooking, deleteBooking, getDoctors, sendReminder, syncAllDoctors, extractArray } from '../services/api.js';
 import { AddRoundedIcon, DeleteRoundedIcon, EditRoundedIcon, SyncRoundedIcon, WhatsAppIcon } from '../components/icons';
 
 
@@ -107,7 +107,7 @@ export default function BookingsPage() {
         getDoctors(signal),
       ]);
       if (signal?.aborted) return;
-      let data = bRes.data;
+      let data = extractArray(bRes.data);
       if (filters.service) data = data.filter(b => b.service === filters.service || SERVICES_AR[SERVICES_EN.indexOf(b.service)] === filters.service);
       setBookings(data);
       setDoctors(dRes.data);

@@ -9,7 +9,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
 import { useLang } from '../context/AppContext.jsx';
-import { getBookings, getDoctors } from '../services/api.js';
+import { getBookings, getDoctors, extractArray } from '../services/api.js';
 import { DashboardRoundedIcon, InstagramIcon, TrendingDownRoundedIcon, TrendingUpRoundedIcon, WhatsAppIcon } from '../components/icons';
 
 const STATUS_COLORS  = { pending:'#F59E0B', confirmed:'#0A6EBD', completed:'#10B981', cancelled:'#EF4444', 'no-show':'#8B5CF6', no_show:'#8B5CF6' };
@@ -58,7 +58,8 @@ export default function AnalyticsPage() {
     setLoading(true);
     try {
       const [bRes, dRes] = await Promise.all([getBookings(), getDoctors()]);
-      setBookings(bRes.data);
+      const bData = extractArray(bRes.data);
+      setBookings(bData);
       setDoctors(dRes.data);
     } catch {}
     finally { setLoading(false); }

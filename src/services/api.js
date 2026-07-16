@@ -2,6 +2,10 @@ import axios from 'axios';
 
 const api = axios.create({ baseURL: '/api' });
 
+export function extractArray(response) {
+  return Array.isArray(response) ? response : (response?.data ?? []);
+}
+
 api.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
     const token = localStorage.getItem('sc_token');
@@ -35,7 +39,7 @@ export const getBlockedSlots = (params) => api.get('/blocked-slots', { params })
 export const blockSlot       = (data) => api.post('/blocked-slots', data);
 export const unblockSlot     = (id) => api.delete(`/blocked-slots/${id}`);
 
-export const getUsers           = (params) => api.get('/users', { params });
+export const getUsers           = (params) => api.get('/auth/users', { params });
 export const updateUserStatus   = (id, data) => api.patch(`/users/${id}/status`, data);
 export const updateUserRole     = (id, data) => api.patch(`/users/${id}/role`, data);
 export const deleteUser         = (id) => api.delete(`/users/${id}`);

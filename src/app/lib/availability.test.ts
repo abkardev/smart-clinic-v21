@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { generateTimeSlots, DayStatus, findNearestAppointment, BOOKING_WINDOW_DAYS } from './availability';
+import {
+  generateTimeSlots, DayStatus, findNearestAppointment,
+  BOOKING_WINDOW_DAYS, filterTodaySlots, CLINIC_TIMEZONE,
+  BOOKING_BUFFER_MINUTES, MINIMUM_ADVANCE_BOOKING_HOURS, getClinicNow,
+} from './availability';
 
 // ─── generateTimeSlots ────────────────────────────────────────────────────────
 describe('generateTimeSlots', () => {
@@ -359,5 +363,228 @@ describe('BOOKING_WINDOW_DAYS', () => {
   it('is within supported values [7, 14, 21, 30, 60]', () => {
     const supported = [7, 14, 21, 30, 60];
     expect(supported).toContain(BOOKING_WINDOW_DAYS);
+  });
+});
+
+// ─── filterTodaySlots ────────────────────────────────────────────────────────
+describe('filterTodaySlots', () => {
+  const allSlots = ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
+    '12:00', '14:00', '15:00', '16:00', '16:30', '17:00', '17:30', '18:00'];
+
+  // ── Today with expired slots ──────────────────────────────────────────────
+  it('hides expired slots when no buffer or advance', () => {
+    const nowMin = 14 * 60; // 14:00
+    const result = filterTodaySlots(allSlots, nowMin, 0, 0);
+    expect(result).not.toContain('14:00');
+    expect(result).not.toContain('09:00');
+    expect(result).not.toContain('12:00');
+    expect(result).toContain('15:00');
+    expect(result).toContain('17:00');
+    expect(result).toContain('18:00');
+  });
+
+  // ── Today with booking buffer ─────────────────────────────────────────────
+  it('hides slots within buffer window', () => {
+    const nowMin = 16 * 60 + 45; // 16:45
+    const result = filterTodaySlots(allSlots, nowMin, 30, 0);
+    expect(result).not.toContain('17:00');
+    expect(result).toContain('17:30');
+    expect(result).toContain('18:00');
+  });
+
+  it('buffer=0 shows non-expired slots', () => {
+    const nowMin = 16 * 60 + 45;
+    const result = filterTodaySlots(allSlots, nowMin, 0, 0);
+    expect(result).toContain('17:00');
+    expect(result).toContain('17:30');
+    expect(result).toContain('18:00');
+  });
+
+  // ── Today with minimum advance booking hours ────────────────────────────
+  it('hides slots before minimum advance from now', () => {
+    const nowMin = 14 * 60 + 20; // 14:20
+    const result = filterTodaySlots(allSlots, nowMin, 0, 3);
+    const earliest = 14 * 60 + 20 + 3 * 60; // 17:20
+    for (const s of result) {
+      const [h, m] = s.split(':').map(Number);
+      const slotMin = h * 60 + m;
+      expect(slotMin).toBeGreaterThanOrEqual(earliest);
+    }
+    expect(result[0]).toBe('17:30');
+  });
+
+  it('earliest slot respects minimum advance edge', () => {
+    const nowMin = 16 * 60 + 10; // 16:10
+    const result = filterTodaySlots(allSlots, nowMin, 0, 3);
+    const earliest = 16 * 60 + 10 + 3 * 60; // 19:10
+    for (const s of result) {
+      const [h, m] = s.split(':').map(Number);
+      const slotMin = h * 60 + m;
+      expect(slotMin).toBeGreaterThanOrEqual(earliest);
+    }
+    expect(result.length).toBe(0); // no slots at 19:10 or later
+  });
+
+  // ── Combined buffer + advance hours ──────────────────────────────────────
+  it('applies both buffer and advance together (stricter wins)', () => {
+    const nowMin = 15 * 60; // 15:00
+    // buffer=60 → cutoff 16:00, advance=2h → cutoff 17:00
+    const result = filterTodaySlots(allSlots, nowMin, 60, 2);
+    expect(result).not.toContain('15:00');
+    expect(result).not.toContain('16:00');
+    expect(result).not.toContain('16:30');
+    expect(result[0]).toBe('17:00');
+  });
+
+  it('advance hours = 0 disables advance check', () => {
+    const nowMin = 15 * 60 + 30; // 15:30
+    const result = filterTodaySlots(allSlots, nowMin, 0, 0);
+    expect(result[0]).toBe('16:00');
+    expect(result).not.toContain('15:30');
+  });
+
+  it('buffer = 0 disables buffer check', () => {
+    const nowMin = 10 * 60; // 10:00
+    const result = filterTodaySlots(allSlots, nowMin, 0, 0);
+    expect(result).not.toContain('10:00');
+    expect(result[0]).toBe('10:30');
+  });
+
+  // ── Advance hours disabled (0) ──────────────────────────────────────────
+  it('handles advance hours = 0 as disabled', () => {
+    const nowMin = 9 * 60; // 09:00
+    const result = filterTodaySlots(allSlots, nowMin, 10, 0);
+    expect(result).not.toContain('09:00');
+    expect(result[0]).toBe('09:30');
+  });
+
+  // ── Custom advance values ───────────────────────────────────────────────
+  it('advance hours = 1 filters correctly', () => {
+    const nowMin = 8 * 60; // 08:00
+    const result = filterTodaySlots(allSlots, nowMin, 0, 1);
+    expect(result[0]).toBe('09:00');
+    expect(result).not.toContain('08:00');
+  });
+
+  it('advance hours = 6 filters correctly', () => {
+    const nowMin = 10 * 60; // 10:00
+    const result = filterTodaySlots(allSlots, nowMin, 0, 6);
+    // cutoff = max(10:01, 10:00, 16:00) = 16:00
+    expect(result).not.toContain('15:00');
+    expect(result).toContain('16:00');
+    expect(result).toContain('18:00');
+    const filtered = allSlots.filter(s => {
+      const [h, m] = s.split(':').map(Number);
+      return h * 60 + m >= 16 * 60; // >= 16:00
+    });
+    expect(result).toEqual(filtered);
+  });
+
+  // ── Today edge cases ────────────────────────────────────────────────────
+  it('handles midnight edge: now=00:00, slots at 00:00 kept if advance=0', () => {
+    const midnightSlots = ['00:00', '00:30', '01:00'];
+    const result = filterTodaySlots(midnightSlots, 0, 0, 0);
+    expect(result).not.toContain('00:00'); // exactly now → expired
+    expect(result[0]).toBe('00:30');
+  });
+
+  it('handles midnight edge: now=00:00, advance=1 → first slot at 01:00', () => {
+    const midnightSlots = ['00:00', '00:30', '01:00', '01:30'];
+    const result = filterTodaySlots(midnightSlots, 0, 0, 1);
+    expect(result[0]).toBe('01:00');
+    expect(result).not.toContain('00:00');
+    expect(result).not.toContain('00:30');
+  });
+
+  it('returns empty array when all slots are before cutoff', () => {
+    const result = filterTodaySlots(['09:00', '10:00'], 12 * 60, 0, 3);
+    expect(result).toEqual([]);
+  });
+
+  it('keeps all slots when now is before first slot', () => {
+    const slots = ['10:00', '11:00'];
+    const result = filterTodaySlots(slots, 8 * 60, 0, 0);
+    expect(result).toEqual(slots);
+  });
+
+  it('empty input returns empty output', () => {
+    expect(filterTodaySlots([], 10 * 60, 0, 0)).toEqual([]);
+  });
+
+  it('does not mutate input array', () => {
+    const input = ['10:00', '11:00', '12:00'];
+    const copy = [...input];
+    filterTodaySlots(input, 10 * 60 + 30, 0, 0);
+    expect(input).toEqual(copy);
+  });
+});
+
+// ─── getClinicNow ────────────────────────────────────────────────────────────
+describe('getClinicNow', () => {
+  it('returns date in YYYY-MM-DD format', () => {
+    const result = getClinicNow('Asia/Riyadh');
+    expect(result.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('returns minutes in 0–1439 range', () => {
+    const result = getClinicNow('Asia/Riyadh');
+    expect(result.minutes).toBeGreaterThanOrEqual(0);
+    expect(result.minutes).toBeLessThan(1440);
+  });
+
+  it('different timezone produces different minute offset', () => {
+    const riyadh = getClinicNow('Asia/Riyadh');
+    const ny = getClinicNow('America/New_York');
+    // at any given instant, these should not be identical
+    // (they could theoretically match at certain UTC moments, but it's extremely unlikely)
+    expect(typeof riyadh.minutes).toBe('number');
+    expect(typeof ny.minutes).toBe('number');
+  });
+
+  it('defaults to Asia/Riyadh when no timezone provided', () => {
+    const result = getClinicNow();
+    const explicit = getClinicNow('Asia/Riyadh');
+    expect(result.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});
+
+// ─── Configuration defaults ──────────────────────────────────────────────────
+describe('Configuration defaults', () => {
+  it('CLINIC_TIMEZONE defaults to Asia/Riyadh', () => {
+    expect(CLINIC_TIMEZONE).toBe('Asia/Riyadh');
+  });
+
+  it('BOOKING_BUFFER_MINUTES defaults to 0', () => {
+    expect(BOOKING_BUFFER_MINUTES).toBe(0);
+  });
+
+  it('MINIMUM_ADVANCE_BOOKING_HOURS defaults to 3', () => {
+    expect(MINIMUM_ADVANCE_BOOKING_HOURS).toBe(3);
+  });
+});
+
+// ─── Regression: existing features still work ────────────────────────────────
+describe('Regression — expired slot filter', () => {
+  const allSlots = ['09:00', '10:00', '11:00', '14:00', '15:00', '16:00'];
+
+  it('expired filter alone (buffer=0, advance=0) still works', () => {
+    const nowMin = 13 * 60; // 13:00
+    const result = filterTodaySlots(allSlots, nowMin, 0, 0);
+    expect(result).toEqual(['14:00', '15:00', '16:00']);
+  });
+
+  it('buffer does not break expired filter when both are 0', () => {
+    const nowMin = 16 * 60; // 16:00
+    const result = filterTodaySlots(['16:00', '16:30', '17:00'], nowMin, 0, 0);
+    expect(result).toEqual(['16:30', '17:00']);
+  });
+
+  it('findNearestAppointment skips today with no remaining slots after filter', () => {
+    const days = [
+      { date: '2026-07-20', status: DayStatus.AVAILABLE, availableCount: 0, firstSlot: null, lastSlot: null, isToday: true, isTomorrow: false },
+      { date: '2026-07-21', status: DayStatus.AVAILABLE, availableCount: 3, firstSlot: '09:00', lastSlot: '16:30', isToday: false, isTomorrow: true },
+    ];
+    const result = findNearestAppointment(days);
+    expect(result).toEqual({ date: '2026-07-21', time: '09:00' });
   });
 });

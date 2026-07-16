@@ -9,7 +9,7 @@ import dayGridPlugin   from '@fullcalendar/daygrid';
 import timeGridPlugin  from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import { useLang } from '../context/AppContext.jsx';
-import { getBookings, dragDropBooking, getDoctors, getBlockedSlots, syncFromGoogle } from '../services/api.js';
+import { getBookings, dragDropBooking, getDoctors, getBlockedSlots, syncFromGoogle, extractArray } from '../services/api.js';
 
 const STATUS_COLORS = {
   pending: '#ffa726', confirmed: '#1a73e8', completed: '#34a853',
@@ -61,7 +61,8 @@ export default function CalendarPage() {
           : Promise.resolve({ data: [] }),
       ]);
 
-      const bookingEvents = bookingsRes.data.map(b => ({
+      const rawBookings = extractArray(bookingsRes.data);
+      const bookingEvents = rawBookings.map(b => ({
         id: b.id,
         title: `${b.time} · ${b.name}`,
         start: `${b.date}T${b.time}:00`,
@@ -78,7 +79,8 @@ export default function CalendarPage() {
         },
       }));
 
-      const blockedEvents = blockedRes.data.map(s => ({
+      const rawBlocked = extractArray(blockedRes.data);
+      const blockedEvents = rawBlocked.map(s => ({
         id: `blocked_${s.id}`,
         title: `🚫 ${s.reason || (isRTL ? 'محظور' : 'Blocked')}`,
         start: s.isWholeDay ? s.date : `${s.date}T${s.time}:00`,
