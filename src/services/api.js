@@ -40,9 +40,9 @@ export const blockSlot       = (data) => api.post('/blocked-slots', data);
 export const unblockSlot     = (id) => api.delete(`/blocked-slots/${id}`);
 
 export const getUsers           = (params) => api.get('/auth/users', { params });
-export const updateUserStatus   = (id, data) => api.patch(`/users/${id}/status`, data);
-export const updateUserRole     = (id, data) => api.patch(`/users/${id}/role`, data);
-export const deleteUser         = (id) => api.delete(`/users/${id}`);
+export const updateUserStatus   = (id, status) => api.patch(`/auth/users/${id}/status`, { status });
+export const updateUserRole     = (id, role) => api.patch(`/auth/users/${id}/role`, { role });
+export const deleteUser         = (id) => api.delete(`/auth/users/${id}`);
 
 export const getOffers     = () => api.get('/offers');
 export const createOffer   = (data) => api.post('/offers', data);
