@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { uploadOfferImage } from '@/app/lib/offerStorage';
+import { uploadOfferImage, deleteImage } from '@/app/lib/offerStorage';
 import { prisma } from '@/app/lib/prisma';
 import { getAuthUser, requireRole } from '@/app/lib/auth';
 import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
@@ -38,34 +38,37 @@ export async function POST(req: NextRequest) {
       code?: string; expiresAt?: string; imageBase64?: string;
     };
 
-    // RELIABILITY FIX: image storage now goes through a host-agnostic
-    // adapter (see src/app/lib/offerStorage.ts). It automatically uses
-    // Vercel Blob when deployed on Vercel, or writes to local disk under
-    // public/uploads/ on any other host (Hostinger, a VPS, Docker) where
-    // the filesystem is persistent. No code change needed when switching
-    // hosting providers — only environment variables differ.
     let imageUrl = '';
+    let uploadedPublicId: string | undefined;
     if (imageBase64?.startsWith('data:image')) {
-      const result = await uploadOfferImage(imageBase64, `offer_${Date.now()}`);
+      const result = await uploadOfferImage(imageBase64);
       imageUrl = result.url;
+      uploadedPublicId = result.publicId;
     }
 
-    const offer = await prisma.offer.create({
-      data: {
-        titleEn, titleAr,
-        descriptionEn: descriptionEn ?? null,
-        descriptionAr: descriptionAr ?? null,
-        code: code ?? null,
-        expiresAt: expiresAt ? new Date(expiresAt) : null,
-        imageUrl,
-        imageBase64: imageBase64 ?? '',
-        isActive: true,
-        createdById: user!.id,
-      },
-    });
+    try {
+      const offer = await prisma.offer.create({
+        data: {
+          titleEn, titleAr,
+          descriptionEn: descriptionEn ?? null,
+          descriptionAr: descriptionAr ?? null,
+          code: code ?? null,
+          expiresAt: expiresAt ? new Date(expiresAt) : null,
+          imageUrl,
+          imageBase64: imageBase64 ?? '',
+          isActive: true,
+          createdById: user!.id,
+        },
+      });
 
-    await logAudit(AuditAction.OFFER_CREATED, 'Offer', offer.id, { titleEn }, auditOptsFromRequest(req, user!));
-    return NextResponse.json(offer, { status: 201 });
+      await logAudit(AuditAction.OFFER_CREATED, 'Offer', offer.id, { titleEn }, auditOptsFromRequest(req, user!));
+      return NextResponse.json(offer, { status: 201 });
+    } catch (dbErr) {
+      if (uploadedPublicId) {
+        await deleteImage(uploadedPublicId).catch(() => {});
+      }
+      throw dbErr;
+    }
   } catch (err) {
     logger.error('Failed to create offer', { error: String(err) });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });

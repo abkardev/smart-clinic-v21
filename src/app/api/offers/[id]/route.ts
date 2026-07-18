@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { uploadOfferImage, deleteOfferImage } from '@/app/lib/offerStorage';
+import { uploadOfferImage, deleteOfferImage, deleteImage } from '@/app/lib/offerStorage';
 import { prisma } from '@/app/lib/prisma';
 import { getAuthUser, requireRole } from '@/app/lib/auth';
 import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
@@ -26,15 +26,21 @@ export async function PUT(
     const body = await req.json() as OfferBody;
 
     let imageUrl: string | undefined;
+    let uploadedPublicId: string | undefined;
     if (body.imageBase64 !== undefined) {
       const currentOffer = await prisma.offer.findUnique({ where: { id: params.id } });
+      const oldImageUrl = currentOffer?.imageUrl;
+
       if (body.imageBase64?.startsWith('data:image')) {
-        const result = await uploadOfferImage(body.imageBase64, `offer_${params.id}_${Date.now()}`);
+        const result = await uploadOfferImage(body.imageBase64);
         imageUrl = result.url;
-        if (currentOffer?.imageUrl) await deleteOfferImage(currentOffer.imageUrl);
+        uploadedPublicId = result.publicId;
       } else {
         imageUrl = '';
-        if (currentOffer?.imageUrl) await deleteOfferImage(currentOffer.imageUrl);
+      }
+
+      if (oldImageUrl) {
+        await deleteOfferImage(oldImageUrl);
       }
     }
 
@@ -55,6 +61,9 @@ export async function PUT(
     await logAudit(AuditAction.OFFER_UPDATED, 'Offer', offer.id, { titleEn: offer.titleEn }, auditOptsFromRequest(req, user!));
     return NextResponse.json(offer);
   } catch (err: unknown) {
+    if (uploadedPublicId) {
+      await deleteImage(uploadedPublicId).catch(() => {});
+    }
     const e = err as { code?: string; message?: string };
     if (e.code === 'P2025') return NextResponse.json({ message: 'Offer not found' }, { status: 404 });
     return NextResponse.json({ message: e.message ?? 'Server error' }, { status: 400 });
@@ -71,13 +80,11 @@ export async function DELETE(
   if (roleError) return roleError;
 
   try {
-    const offer = await prisma.offer.delete({ where: { id: params.id } });
+    const offer = await prisma.offer.findUnique({ where: { id: params.id } });
+    if (!offer) return NextResponse.json({ message: 'Offer not found' }, { status: 404 });
 
-    // RELIABILITY FIX: deleteOfferImage() handles both storage backends
-    // automatically — Vercel Blob https:// URLs or local /uploads/...
-    // paths — so this works correctly regardless of which host this is
-    // deployed on, without any code change.
     await deleteOfferImage(offer.imageUrl);
+    await prisma.offer.delete({ where: { id: params.id } });
 
     await logAudit(AuditAction.OFFER_DELETED, 'Offer', params.id, null, auditOptsFromRequest(req, user!));
     return NextResponse.json({ message: 'Offer deleted' });
