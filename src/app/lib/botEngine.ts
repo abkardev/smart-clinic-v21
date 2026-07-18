@@ -15,10 +15,12 @@ import { createBookingIdempotent } from './bookingLock';
 import { trackEvent } from './conversationTracker';
 import { metrics } from './metrics';
 import { waRowTitle, waRowDescription, waSectionTitle, waButtonLabel, waHeader } from './metaValidation';
+import { presentOffers } from './offerPresentation';
 
 export interface BotAdapter {
   sendText(to: string, text: string): Promise<void>;
   sendList(to: string, header: string, body: string, button: string, sections: ListSection[]): Promise<void>;
+  sendMedia?(to: string, type: 'image', url: string, caption?: string): Promise<void>;
 }
 
 export interface ListSection {
@@ -246,6 +248,7 @@ async function resendStep(userId: string, step: string, data: BookingData, adapt
     case 'ask_whatsapp': return sendTextWithNav(userId, MSG.askWhatsapp, adapter, cid);
     case 'ask_call_time': return sendCallTimesList(userId, adapter);
     case 'booking_summary': return sendBookingSummaryScreen(userId, data, adapter);
+    case 'offers': return sendOffersScreen(userId, data, adapter);
     default: return sendMainMenu(userId, adapter);
   }
 }
@@ -306,30 +309,8 @@ async function sendBookingSummaryScreen(userId: string, data: BookingData, adapt
   }]);
 }
 
-async function sendOffersScreen(userId: string, adapter: BotAdapter): Promise<string> {
-  const offers = await prisma.offer.findMany({ where: { isActive: true }, orderBy: { createdAt: 'desc' }, take: 10 });
-  if (!offers.length) {
-    await adapter.sendText(userId, MSG.noOffers);
-    return 'offers';
-  }
-  let text = MSG.offersHeaderAr;
-  offers.forEach((o, i) => {
-    text += `${i + 1}. *${o.titleAr}*\n   ${o.descriptionAr || ''}\n`;
-    if (o.code) text += `   كود الخصم: \`${o.code}\`\n`;
-    text += '\n';
-  });
-  text += '\n— — —\n\n' + MSG.offersHeaderEn;
-  offers.forEach((o, i) => {
-    text += `${i + 1}. *${o.titleEn}*\n   ${o.descriptionEn || ''}\n`;
-    if (o.code) text += `   Code: \`${o.code}\`\n`;
-    text += '\n';
-  });
-  text += MSG.offersFooter;
-  await adapter.sendList(userId, waHeader(bi('العروض', 'Offers')), text, waButtonLabel('اختر', 'Choose'), [
-    { title: waSectionTitle('الإجراءات', 'Actions'), rows: [rowAr('menu_book', '📅 احجز الآن', 'Book Now')] },
-    navigationSection(),
-  ]);
-  return 'offers';
+async function sendOffersScreen(userId: string, data: BookingData, adapter: BotAdapter): Promise<string> {
+  return presentOffers(adapter, userId, data.offersPage || 1);
 }
 
 // ─── Phase 4: Command Handler Classes ─────────────────────────────────────────
@@ -352,10 +333,10 @@ async function lookupExistingBooking(userId: string): Promise<{ id: string; date
 }
 
 class MainMenuHandler implements MessageHandler {
-  async handle(userId: string, input: string, _data: BookingData, adapter: BotAdapter, _source: BookingSource, _cid: string): Promise<string | undefined> {
+  async handle(userId: string, input: string, data: BookingData, adapter: BotAdapter, _source: BookingSource, _cid: string): Promise<string | undefined> {
     switch (input) {
       case 'menu_book': await sendDoctorsList(userId, adapter); return 'select_doctor';
-      case 'menu_offers': return sendOffersScreen(userId, adapter);
+      case 'menu_offers': return sendOffersScreen(userId, data, adapter);
       case 'menu_contact': await adapter.sendText(userId, MSG.contactInfo); return;
       case 'menu_location': await adapter.sendText(userId, MSG.locationInfo); return;
       case 'menu_my_booking': {
@@ -541,8 +522,22 @@ class CallTimeHandler implements MessageHandler {
 }
 
 class OffersHandler implements MessageHandler {
-  async handle(userId: string, input: string, _data: BookingData, adapter: BotAdapter, _source: BookingSource, _cid: string): Promise<string | undefined> {
-    if (input === 'menu_book') { await sendDoctorsList(userId, adapter); return 'select_doctor'; }
+  async handle(userId: string, input: string, data: BookingData, adapter: BotAdapter, _source: BookingSource, _cid: string): Promise<string | undefined> {
+    if (input === 'menu_book' || input.startsWith('offer_')) {
+      data.offersPage = undefined;
+      await sendDoctorsList(userId, adapter);
+      return 'select_doctor';
+    }
+    if (input === 'offers_next_page') {
+      data.offersPage = (data.offersPage || 1) + 1;
+      await sendOffersScreen(userId, data, adapter);
+      return 'offers';
+    }
+    if (input === 'offers_prev_page') {
+      data.offersPage = Math.max(1, (data.offersPage || 1) - 1);
+      await sendOffersScreen(userId, data, adapter);
+      return 'offers';
+    }
     return;
   }
 }

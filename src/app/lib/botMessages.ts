@@ -27,6 +27,7 @@ export interface BookingData {
   editReturn?: string;
   editField?: string;
   existingBookingId?: string;
+  offersPage?: number;
 }
 
 function bi(ar: string, en: string): string {

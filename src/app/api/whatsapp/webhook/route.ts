@@ -73,6 +73,34 @@ function makeWhatsAppAdapter(cid: string): BotAdapter {
       }
     },
 
+    async sendMedia(to, type, url, caption) {
+      const payload = {
+        messaging_product: 'whatsapp',
+        to,
+        type: 'image',
+        image: { link: url, ...(caption ? { caption } : {}) },
+      };
+      logger.info('[MetaAPI] Sending WhatsApp image', {
+        correlationId: cid, to, url: url.slice(0, 80),
+        captionLength: caption?.length ?? 0,
+      });
+      try {
+        const res = await callMetaApi(WA_URL(), WA_HEADERS(), payload, cid);
+        if (!res.ok) {
+          const errBody = await res.text().catch(() => '');
+          const metaErr = parseMetaError(errBody);
+          logger.error('WA sendMedia failed', {
+            status: res.status, error: errBody, correlationId: cid,
+            ...(metaErr ? { metaCode: metaErr.code, metaType: metaErr.type, metaMessage: metaErr.message, metaTrace: metaErr.fbtraceId } : {}),
+          });
+          throw new Error(errBody);
+        }
+      } catch (err) {
+        logger.error('WA sendMedia error', { error: String(err), correlationId: cid });
+        throw err;
+      }
+    },
+
     async sendList(to, header, body, button, sections) {
       sections = ensureRowLimit(sections);
       const interactivePayload = {
