@@ -376,16 +376,16 @@ class MainMenuHandler implements MessageHandler {
           const bookingId = input.slice(11);
           const booking = await prisma.booking.findUnique({ where: { id: bookingId }, include: { doctor: true } });
           if (!booking || !booking.doctor) { await adapter.sendText(userId, MSG.error); return; }
-          _data.existingBookingId = bookingId;
-          _data.doctorId = booking.doctorId;
-          _data.doctorNameAr = booking.doctor.nameAr || booking.doctor.nameEn;
-          _data.doctorNameEn = booking.doctor.nameEn || booking.doctor.nameAr;
-          _data.serviceAr = booking.service;
-          _data.serviceEn = booking.service;
-          _data.name = booking.name;
-          _data.callTimeAr = '';
-          _data.callTimeEn = '';
-          await sendDatePicker(userId, _data, adapter);
+          data.existingBookingId = bookingId;
+          data.doctorId = booking.doctorId;
+          data.doctorNameAr = booking.doctor.nameAr || booking.doctor.nameEn;
+          data.doctorNameEn = booking.doctor.nameEn || booking.doctor.nameAr;
+          data.serviceAr = booking.service;
+          data.serviceEn = booking.service;
+          data.name = booking.name;
+          data.callTimeAr = '';
+          data.callTimeEn = '';
+          await sendDatePicker(userId, data, adapter);
           return 'select_date';
         }
         await adapter.sendText(userId, MSG.pleaseUseButtons); return;
