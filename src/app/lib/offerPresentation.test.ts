@@ -237,7 +237,7 @@ describe('presentOffers', () => {
       makeOffer({ id: 'o1', imageUrl: 'https://example.com/1.jpg' }),
       makeOffer({ id: 'o2', titleAr: 'عرض ٢', titleEn: 'Offer 2', imageUrl: 'https://example.com/2.jpg' }),
     ];
-    vi.mocked(prisma.offer.findMany).mockResolvedValueOnce(offers);
+    vi.mocked(prisma.offer.findMany).mockResolvedValueOnce(offers as any);
 
     const result = await presentOffers(adapter, 'user-1', 1);
 
@@ -255,7 +255,7 @@ describe('presentOffers', () => {
     const offers = [
       makeOffer({ id: 'o1', imageUrl: null }),
     ];
-    vi.mocked(prisma.offer.findMany).mockResolvedValueOnce(offers);
+    vi.mocked(prisma.offer.findMany).mockResolvedValueOnce(offers as any);
 
     await presentOffers(adapter, 'user-1', 1);
 
@@ -271,7 +271,7 @@ describe('presentOffers', () => {
     const offers = Array.from({ length: OFFERS_PAGE_SIZE + 1 }, (_, i) =>
       makeOffer({ id: `o${i + 1}`, titleAr: `عرض ${i + 1}`, titleEn: `Offer ${i + 1}`, imageUrl: 'https://example.com/img.jpg' }),
     );
-    vi.mocked(prisma.offer.findMany).mockResolvedValueOnce(offers);
+    vi.mocked(prisma.offer.findMany).mockResolvedValueOnce(offers as any);
 
     await presentOffers(adapter, 'user-1', 1);
 
@@ -293,7 +293,7 @@ describe('presentOffers', () => {
     const offers = Array.from({ length: OFFERS_PAGE_SIZE + 1 }, (_, i) =>
       makeOffer({ id: `o${i + 1}`, titleAr: `عرض ${i + 1}`, titleEn: `Offer ${i + 1}`, imageUrl: 'https://example.com/img.jpg' }),
     );
-    vi.mocked(prisma.offer.findMany).mockResolvedValueOnce(offers);
+    vi.mocked(prisma.offer.findMany).mockResolvedValueOnce(offers as any);
 
     await presentOffers(adapter, 'user-1', 2);
 
@@ -310,7 +310,7 @@ describe('presentOffers', () => {
     const offers = Array.from({ length: OFFERS_PAGE_SIZE * 3 }, (_, i) =>
       makeOffer({ id: `o${i + 1}`, titleAr: `عرض ${i + 1}`, titleEn: `Offer ${i + 1}`, imageUrl: 'https://example.com/img.jpg' }),
     );
-    vi.mocked(prisma.offer.findMany).mockResolvedValueOnce(offers);
+    vi.mocked(prisma.offer.findMany).mockResolvedValueOnce(offers as any);
 
     await presentOffers(adapter, 'user-1', 2);
 
@@ -327,7 +327,7 @@ describe('presentOffers', () => {
     const offers = [
       makeOffer({ id: 'o1', imageUrl: null }),
     ];
-    vi.mocked(prisma.offer.findMany).mockResolvedValueOnce(offers);
+    vi.mocked(prisma.offer.findMany).mockResolvedValueOnce(offers as any);
 
     await presentOffers(adapter, 'user-1', 99);
 
@@ -340,7 +340,7 @@ describe('presentOffers', () => {
     const offers = Array.from({ length: OFFERS_PAGE_SIZE * 2 + 1 }, (_, i) =>
       makeOffer({ id: `o${i + 1}`, titleAr: `عرض ${i + 1}`, titleEn: `Offer ${i + 1}`, imageUrl: 'https://example.com/img.jpg' }),
     );
-    vi.mocked(prisma.offer.findMany).mockResolvedValueOnce(offers);
+    vi.mocked(prisma.offer.findMany).mockResolvedValueOnce(offers as any);
 
     await presentOffers(adapter, 'user-1', 1);
     expect(mockSendMedia).toHaveBeenCalledTimes(OFFERS_PAGE_SIZE);
@@ -355,7 +355,7 @@ describe('presentOffers', () => {
       makeOffer({ id: 'o1', imageUrl: 'https://example.com/1.jpg' }),
       makeOffer({ id: 'o2', imageUrl: 'https://example.com/2.jpg' }),
     ];
-    vi.mocked(prisma.offer.findMany).mockResolvedValueOnce(offers);
+    vi.mocked(prisma.offer.findMany).mockResolvedValueOnce(offers as any);
 
     await presentOffers(adapter, 'user-1', 1);
 
@@ -376,7 +376,7 @@ describe('presentOffers', () => {
       makeOffer({ id: 'o2', imageUrl: 'https://example.com/2.jpg' }),
       makeOffer({ id: 'o3', imageUrl: 'https://example.com/3.jpg' }),
     ];
-    vi.mocked(prisma.offer.findMany).mockResolvedValueOnce(offers);
+    vi.mocked(prisma.offer.findMany).mockResolvedValueOnce(offers as any);
 
     await expect(presentOffers(adapter, 'user-1', 1)).resolves.toBe('offers');
 

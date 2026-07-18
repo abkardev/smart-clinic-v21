@@ -22,11 +22,12 @@ export async function PUT(
   const roleError = requireRole(user!, 'superadmin', 'admin');
   if (roleError) return roleError;
 
+  let uploadedPublicId: string | undefined;
+
   try {
     const body = await req.json() as OfferBody;
 
     let imageUrl: string | undefined;
-    let uploadedPublicId: string | undefined;
     if (body.imageBase64 !== undefined) {
       const currentOffer = await prisma.offer.findUnique({ where: { id: params.id } });
       const oldImageUrl = currentOffer?.imageUrl;
