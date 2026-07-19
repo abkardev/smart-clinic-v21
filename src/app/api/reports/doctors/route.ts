@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
 
     if (format === 'xlsx') {
       const buffer = generateExcel(rows, columns);
-      return new Response(buffer, {
+      return new Response(new Uint8Array(buffer), {
         status: 200,
         headers: {
           'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
