@@ -115,7 +115,7 @@ export async function GET(req: NextRequest) {
       y += 7;
     });
 
-    const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
+    const pdfBuffer = doc.output('arraybuffer');
     return new Response(pdfBuffer, {
       status: 200,
       headers: {

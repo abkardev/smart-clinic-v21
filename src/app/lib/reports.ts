@@ -1,21 +1,12 @@
 import { jsPDF } from 'jspdf';
 import * as XLSX from 'xlsx';
+import type { Booking as PrismaBooking, Doctor } from '@prisma/client';
 
-export interface Booking {
-  id: string;
-  name: string;
-  phone: string;
-  service: string;
-  date: string;
-  time: string;
-  status: string;
-  notes?: string | null;
-  source?: string;
-  doctorId?: { id: string; nameEn?: string; nameAr?: string } | string;
-  createdAt?: string | Date;
-}
+type ReportBooking = Omit<PrismaBooking, 'doctor'> & {
+  doctorId: Pick<Doctor, 'id' | 'nameEn' | 'nameAr'>;
+};
 
-export function generateAppointmentReportPdf(bookings: Booking[], title: string): Buffer {
+export function generateAppointmentReportPdf(bookings: ReportBooking[], title: string): ArrayBuffer {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
   doc.setFontSize(16);
@@ -69,13 +60,13 @@ export function generateAppointmentReportPdf(bookings: Booking[], title: string)
     y += 7;
   });
 
-  return Buffer.from(doc.output('arraybuffer'));
+  return doc.output('arraybuffer');
 }
 
 export function generateExcel(
   rows: Record<string, unknown>[],
   columns: { header: string; key: string }[]
-): Buffer {
+): Uint8Array {
   const data = rows.map((r) => {
     const obj: Record<string, unknown> = {};
     columns.forEach((c) => { obj[c.header] = r[c.key] ?? ''; });
@@ -86,7 +77,7 @@ export function generateExcel(
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Report');
 
-  return Buffer.from(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }));
+  return new Uint8Array(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }));
 }
 
 export function generateCsv(
@@ -110,7 +101,7 @@ export function generateCsv(
   return lines.join('\n');
 }
 
-export function formatBookingForReport(booking: any): Record<string, unknown> {
+export function formatBookingForReport(booking: ReportBooking): Record<string, unknown> {
   const docName = typeof booking.doctorId === 'object' && booking.doctorId
     ? (booking.doctorId.nameEn || booking.doctorId.nameAr || '')
     : '';
@@ -130,7 +121,10 @@ export function formatBookingForReport(booking: any): Record<string, unknown> {
   };
 }
 
-export function formatDoctorReport(doctors: any[], bookings: any[]): Record<string, unknown>[] {
+export function formatDoctorReport(
+  doctors: Doctor[],
+  bookings: PrismaBooking[]
+): Record<string, unknown>[] {
   const doctorMap: Record<string, { nameEn: string; nameAr: string; total: number; completed: number; cancelled: number; noShow: number }> = {};
 
   doctors.forEach((d) => {
