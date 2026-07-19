@@ -1,12 +1,12 @@
 import { jsPDF } from 'jspdf';
 import * as XLSX from 'xlsx';
-import type { Booking as PrismaBooking, Doctor } from '@prisma/client';
+import type { Booking, Doctor, Prisma } from '@prisma/client';
 
-type ReportBooking = Omit<PrismaBooking, 'doctor'> & {
-  doctorId: Pick<Doctor, 'id' | 'nameEn' | 'nameAr'>;
-};
+type BookingWithDoctor = Prisma.BookingGetPayload<{
+  include: { doctor: { select: { id: true; nameEn: true; nameAr: true } } }
+}>;
 
-export function generateAppointmentReportPdf(bookings: ReportBooking[], title: string): ArrayBuffer {
+export function generateAppointmentReportPdf(bookings: BookingWithDoctor[], title: string): ArrayBuffer {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
   doc.setFontSize(16);
@@ -43,9 +43,7 @@ export function generateAppointmentReportPdf(bookings: ReportBooking[], title: s
       drawHeader();
     }
 
-    const docName = typeof b.doctorId === 'object' && b.doctorId
-      ? (b.doctorId.nameEn || b.doctorId.nameAr || '')
-      : '';
+    const docName = b.doctor?.nameEn || b.doctor?.nameAr || '';
 
     const row = [String(i + 1), b.name, b.phone, docName, b.date, b.time, b.status.replace('_', '-')];
 
@@ -66,7 +64,7 @@ export function generateAppointmentReportPdf(bookings: ReportBooking[], title: s
 export function generateExcel(
   rows: Record<string, unknown>[],
   columns: { header: string; key: string }[]
-): Uint8Array {
+): Buffer {
   const data = rows.map((r) => {
     const obj: Record<string, unknown> = {};
     columns.forEach((c) => { obj[c.header] = r[c.key] ?? ''; });
@@ -77,7 +75,7 @@ export function generateExcel(
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Report');
 
-  return new Uint8Array(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }));
+  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 }
 
 export function generateCsv(
@@ -101,10 +99,8 @@ export function generateCsv(
   return lines.join('\n');
 }
 
-export function formatBookingForReport(booking: ReportBooking): Record<string, unknown> {
-  const docName = typeof booking.doctorId === 'object' && booking.doctorId
-    ? (booking.doctorId.nameEn || booking.doctorId.nameAr || '')
-    : '';
+export function formatBookingForReport(booking: BookingWithDoctor): Record<string, unknown> {
+  const docName = booking.doctor?.nameEn || booking.doctor?.nameAr || '';
 
   return {
     id: booking.id,
@@ -123,7 +119,7 @@ export function formatBookingForReport(booking: ReportBooking): Record<string, u
 
 export function formatDoctorReport(
   doctors: Doctor[],
-  bookings: PrismaBooking[]
+  bookings: Booking[]
 ): Record<string, unknown>[] {
   const doctorMap: Record<string, { nameEn: string; nameAr: string; total: number; completed: number; cancelled: number; noShow: number }> = {};
 
@@ -134,15 +130,13 @@ export function formatDoctorReport(
   });
 
   bookings.forEach((b) => {
-    const id = typeof b.doctorId === 'object' && b.doctorId
-      ? (b.doctorId.id || b.doctorId)
-      : b.doctorId;
+    const id = b.doctorId;
     if (!id || !doctorMap[id]) return;
 
     doctorMap[id].total++;
     if (b.status === 'completed') doctorMap[id].completed++;
     if (b.status === 'cancelled') doctorMap[id].cancelled++;
-    if (b.status === 'no_show' || b.status === 'no-show') doctorMap[id].noShow++;
+    if (b.status === 'no_show') doctorMap[id].noShow++;
   });
 
   return Object.entries(doctorMap)

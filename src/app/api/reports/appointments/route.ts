@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
       orderBy: [{ date: 'asc' }, { time: 'asc' }],
     });
 
-    const rows = bookings.map(({ doctor, ...b }) => formatBookingForReport({ ...b, doctorId: doctor }));
+    const rows = bookings.map((b) => formatBookingForReport(b));
 
     const columns = [
       { header: 'ID', key: 'id' },
@@ -78,8 +78,8 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const pdfBuffer = generateAppointmentReportPdf(bookings.map(({ doctor, ...b }) => ({ ...b, doctorId: doctor })), 'Appointments Report');
-    return new Response(pdfBuffer, {
+    const pdfBuffer = generateAppointmentReportPdf(bookings, 'Appointments Report');
+    return new Response(new Uint8Array(pdfBuffer), {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',

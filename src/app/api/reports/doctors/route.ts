@@ -116,7 +116,7 @@ export async function GET(req: NextRequest) {
     });
 
     const pdfBuffer = doc.output('arraybuffer');
-    return new Response(pdfBuffer, {
+    return new Response(new Uint8Array(pdfBuffer), {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',
