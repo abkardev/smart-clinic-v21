@@ -43,6 +43,15 @@ function RequireAuth({ children }) {
   return children;
 }
 
+function RequireRole({ children, roles }) {
+  const { user, loading } = useAuth();
+  if (loading) return <AuthLoader />;
+  if (!user || !roles.includes(user.role)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+  return children;
+}
+
 function RedirectIfAuth({ children }) {
   const { isAuth, loading } = useAuth();
   if (loading) return <AuthLoader />;
@@ -123,10 +132,10 @@ function ThemedApp() {
             <Route path="doctors"    element={S(DoctorsPage)} />
             <Route path="calendar"   element={S(CalendarPage)} />
             <Route path="slots"      element={S(SlotManagerPage)} />
-            <Route path="offers"     element={S(OffersPage)} />
-            <Route path="holidays"   element={S(HolidaysPage)} />
-            <Route path="users"      element={S(UsersPage)} />
-            <Route path="audit-logs" element={S(AuditLogsPage)} />
+            <Route path="offers"     element={<RequireRole roles={['superadmin']}>{S(OffersPage)}</RequireRole>} />
+            <Route path="holidays"   element={<RequireRole roles={['superadmin']}>{S(HolidaysPage)}</RequireRole>} />
+            <Route path="users"      element={<RequireRole roles={['superadmin']}>{S(UsersPage)}</RequireRole>} />
+            <Route path="audit-logs" element={<RequireRole roles={['superadmin']}>{S(AuditLogsPage)}</RequireRole>} />
           </Route>
 
           <Route path="*" element={<Navigate to="/login" replace />} />

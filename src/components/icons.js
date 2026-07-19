@@ -15,6 +15,7 @@ export { default as CheckCircleRoundedIcon }   from '@mui/icons-material/CheckCi
 export { default as CoffeeRoundedIcon }        from '@mui/icons-material/CoffeeRounded';
 export { default as DashboardRoundedIcon }     from '@mui/icons-material/DashboardRounded';
 export { default as DeleteRoundedIcon }        from '@mui/icons-material/DeleteRounded';
+export { default as DownloadRoundedIcon }      from '@mui/icons-material/DownloadRounded';
 export { default as EditRoundedIcon }          from '@mui/icons-material/EditRounded';
 export { default as EmailIcon }                from '@mui/icons-material/Email';
 export { default as EmailRoundedIcon }         from '@mui/icons-material/EmailRounded';

@@ -37,12 +37,14 @@
     "cloudinary": "^2.10.0",
     "googleapis": "^140.0.0",
     "jsonwebtoken": "^9.0.2",
+    "jspdf": "^2.5.2",
     "next": "^14.2.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.23.1",
     "recharts": "^2.12.7",
-    "resend": "^6.17.2"
+    "resend": "^6.17.2",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",

@@ -143,7 +143,7 @@ export async function POST(req: NextRequest) {
     // Log after calendar sync
     await logAudit(AuditAction.BOOKING_CREATED, 'Booking', booking.id,
       { name: booking.name, phone: booking.phone, date: booking.date, time: booking.time, doctorId: booking.doctorId, source: booking.source },
-      auditOptsFromRequest(req)
+      auditOptsFromRequest(req, user!)
     );
     return apiResponse({ ...rest, doctorId: doc }, { status: 201 });
   } catch (err: unknown) {

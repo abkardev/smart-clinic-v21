@@ -32,7 +32,8 @@ export const getBookings     = (params) => api.get('/bookings', { params });
 export const createBooking   = (data) => api.post('/bookings', data);
 export const updateBooking   = (id, data) => api.put(`/bookings/${id}`, data);
 export const deleteBooking   = (id) => api.delete(`/bookings/${id}`);
-export const sendReminder    = (id) => api.post(`/whatsapp/reminder/${id}`);
+export const sendReminder        = (id) => api.post(`/whatsapp/reminder/${id}`);
+export const sendEmailReminder   = (id, data) => api.post(`/email-reminder/${id}`, data);
 export const dragDropBooking = (id, data) => api.patch(`/bookings/${id}/drag-drop`, data);
 
 export const getBlockedSlots = (params) => api.get('/blocked-slots', { params });
@@ -54,3 +55,6 @@ export const createHoliday = (data) => api.post('/holidays', data);
 export const deleteHoliday = (id) => api.delete(`/holidays/${id}`);
 
 export const getAuditLogs  = (params) => api.get('/audit-logs', { params });
+
+export const exportAppointmentsReport = (params) => api.get('/reports/appointments', { params, responseType: 'blob' });
+export const exportDoctorsReport = (params) => api.get('/reports/doctors', { params, responseType: 'blob' });

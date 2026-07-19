@@ -44,7 +44,7 @@ export async function PATCH(
 
     await logAudit(AuditAction.BOOKING_DRAGGED, 'Booking', params.id,
       { oldDate: booking.date, oldTime: booking.time, newDate: date, newTime: time },
-      auditOptsFromRequest(req)
+      auditOptsFromRequest(req, user!)
     );
     return apiResponse(updated);
   } catch (err: unknown) {

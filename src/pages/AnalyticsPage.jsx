@@ -2,15 +2,15 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   Box, Typography, Paper, Grid, Select, MenuItem, FormControl, InputLabel,
-  Chip, Skeleton, Divider, Avatar,
+  Chip, Skeleton, Divider, Avatar, Button,
 } from '@mui/material';
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
 import { useLang } from '../context/AppContext.jsx';
-import { getBookings, getDoctors, extractArray } from '../services/api.js';
-import { DashboardRoundedIcon, InstagramIcon, TrendingDownRoundedIcon, TrendingUpRoundedIcon, WhatsAppIcon } from '../components/icons';
+import { getBookings, getDoctors, extractArray, exportAppointmentsReport } from '../services/api.js';
+import { DashboardRoundedIcon, DownloadRoundedIcon, InstagramIcon, TrendingDownRoundedIcon, TrendingUpRoundedIcon, WhatsAppIcon } from '../components/icons';
 
 const STATUS_COLORS  = { pending:'#F59E0B', confirmed:'#0A6EBD', completed:'#10B981', cancelled:'#EF4444', 'no-show':'#8B5CF6', no_show:'#8B5CF6' };
 const SOURCE_COLORS  = { whatsapp:'#25D366', instagram:'#E1306C', dashboard:'#0A6EBD', api:'#8B5CF6' };
@@ -67,6 +67,18 @@ export default function AnalyticsPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  const handleExport = async (format) => {
+    try {
+      const now = new Date();
+      const start = new Date(now); start.setDate(now.getDate() - parseInt(period));
+      const params = { format, startDate: start.toISOString().split('T')[0], endDate: now.toISOString().split('T')[0] };
+      const res = await exportAppointmentsReport(params);
+      const url = URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement('a'); a.href = url; a.download = `appointments-report.${format}`; a.click();
+      URL.revokeObjectURL(url);
+    } catch { /* ignore */ }
+  };
+
   // ── Computed analytics ────────────────────────────────────────────────────
   const now = new Date();
   const cutoff = new Date(now); cutoff.setDate(now.getDate() - parseInt(period));
@@ -86,6 +98,8 @@ export default function AnalyticsPage() {
   const completedPrv = prev.filter(b=>b.status==='completed').length;
   const cancelledCur = filtered.filter(b=>b.status==='cancelled').length;
   const noShowCur    = filtered.filter(b=>b.status==='no-show'||b.status==='no_show').length;
+  const cancelRate   = totalCur > 0 ? Math.round((cancelledCur / totalCur) * 100) : 0;
+  const noShowRate   = totalCur > 0 ? Math.round((noShowCur / totalCur) * 100) : 0;
   const waCur        = filtered.filter(b=>b.source==='whatsapp').length;
   const igCur        = filtered.filter(b=>b.source==='instagram').length;
 
@@ -169,11 +183,19 @@ export default function AnalyticsPage() {
   const monthlyData = Object.values(monthlyMap).sort((a,b)=>a.month.localeCompare(b.month)).slice(-6)
     .map(d => ({ ...d, label: MONTH_NAMES[parseInt(d.month.slice(5))-1] }));
 
+  // Most booked services
+  const servicesCount = {};
+  filtered.forEach(b => { servicesCount[b.service] = (servicesCount[b.service] || 0) + 1; });
+  const mostBookedServices = Object.entries(servicesCount)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([n, c]) => ({ name: n, count: c }));
+
   const kpis = [
     { icon:<TrendingUpRoundedIcon/>, label: isRTL?'إجمالي الحجوزات':t('totalBookings'), value:totalCur, trend:trendPct(totalCur,totalPrv), color:'#0A6EBD', sub: isRTL?`${prev.length} في الفترة السابقة`:`${prev.length} prev period` },
     { icon:<DashboardRoundedIcon/>,  label: isRTL?'مكتملة':t('completed'),              value:completedCur, trend:trendPct(completedCur,completedPrv), color:'#10B981' },
-    { icon:<TrendingDownRoundedIcon/>,label:isRTL?'ملغاة':t('cancelled'),              value:cancelledCur, color:'#EF4444' },
-    { icon:<TrendingDownRoundedIcon/>,label:isRTL?'لم يحضر':t('noShow'),               value:noShowCur,    color:'#8B5CF6' },
+    { icon:<TrendingDownRoundedIcon/>,label:isRTL?'ملغاة':t('cancelled'),              value:`${cancelledCur} (${cancelRate}%)`, color:'#EF4444' },
+    { icon:<TrendingDownRoundedIcon/>,label:isRTL?'لم يحضر':t('noShow'),               value:`${noShowCur} (${noShowRate}%)`,    color:'#8B5CF6' },
     { icon:<WhatsAppIcon/>,           label:t('whatsappBookings'),                      value:waCur,        color:'#25D366', sub:t('viaBot') },
     { icon:<InstagramIcon/>,          label:t('instagramBookings'),                     value:igCur,        color:'#E1306C', sub:t('viaBot') },
   ];
@@ -187,15 +209,26 @@ export default function AnalyticsPage() {
             {isRTL ? 'تحليل شامل لأداء العيادة' : 'Comprehensive clinic performance analytics'}
           </Typography>
         </Box>
-        <FormControl size="small" sx={{ minWidth: 160 }}>
-          <InputLabel>{isRTL?'الفترة الزمنية':'Time Period'}</InputLabel>
-          <Select value={period} label={isRTL?'الفترة الزمنية':'Time Period'} onChange={e=>setPeriod(e.target.value)}>
-            <MenuItem value="7">{isRTL?'آخر 7 أيام':'Last 7 Days'}</MenuItem>
-            <MenuItem value="30">{isRTL?'آخر 30 يوم':'Last 30 Days'}</MenuItem>
-            <MenuItem value="90">{isRTL?'آخر 3 أشهر':'Last 3 Months'}</MenuItem>
-            <MenuItem value="180">{isRTL?'آخر 6 أشهر':'Last 6 Months'}</MenuItem>
-          </Select>
-        </FormControl>
+        <Box display="flex" gap={0.5} alignItems="center" flexWrap="wrap">
+          <Button size="small" variant="outlined" startIcon={<DownloadRoundedIcon />} onClick={() => handleExport('pdf')} sx={{ textTransform:'none', fontSize:12 }}>
+            PDF
+          </Button>
+          <Button size="small" variant="outlined" startIcon={<DownloadRoundedIcon />} onClick={() => handleExport('csv')} sx={{ textTransform:'none', fontSize:12 }}>
+            CSV
+          </Button>
+          <Button size="small" variant="outlined" startIcon={<DownloadRoundedIcon />} onClick={() => handleExport('xlsx')} sx={{ textTransform:'none', fontSize:12 }}>
+            Excel
+          </Button>
+          <FormControl size="small" sx={{ minWidth: 160 }}>
+            <InputLabel>{isRTL?'الفترة الزمنية':'Time Period'}</InputLabel>
+            <Select value={period} label={isRTL?'الفترة الزمنية':'Time Period'} onChange={e=>setPeriod(e.target.value)}>
+              <MenuItem value="7">{isRTL?'آخر 7 أيام':'Last 7 Days'}</MenuItem>
+              <MenuItem value="30">{isRTL?'آخر 30 يوم':'Last 30 Days'}</MenuItem>
+              <MenuItem value="90">{isRTL?'آخر 3 أشهر':'Last 3 Months'}</MenuItem>
+              <MenuItem value="180">{isRTL?'آخر 6 أشهر':'Last 6 Months'}</MenuItem>
+            </Select>
+          </FormControl>
+        </Box>
       </Box>
 
       {/* KPI Row */}
@@ -319,6 +352,26 @@ export default function AnalyticsPage() {
               <Line type="monotone" dataKey="total"     name={isRTL?'إجمالي':t('totalBookings')} stroke="#0A6EBD" strokeWidth={2.5} dot={{r:4}} activeDot={{r:6}}/>
               <Line type="monotone" dataKey="completed" name={isRTL?'مكتملة':t('completed')}     stroke="#10B981" strokeWidth={2.5} dot={{r:4}} activeDot={{r:6}}/>
             </LineChart>
+          </ResponsiveContainer>
+        )}
+      </Paper>
+
+      {/* Most Booked Services */}
+      <Paper elevation={0} sx={{ p:3, mb:3, border:'1px solid rgba(148,163,184,0.15)', borderRadius:3 }}>
+        <SectionTitle>{isRTL?'الخدمات الأكثر حجزاً':'Most Booked Services'}</SectionTitle>
+        {loading ? <ChartSkeleton height={280}/> : mostBookedServices.length === 0 ? (
+          <Typography color="text.disabled" textAlign="center" py={3}>{t('noData')}</Typography>
+        ) : (
+          <ResponsiveContainer width="100%" height={Math.max(200, mostBookedServices.length * 36)}>
+            <BarChart data={mostBookedServices} layout="vertical" margin={{top:5,right:20,left:10,bottom:5}}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9"/>
+              <XAxis type="number" tick={{fontSize:11}} axisLine={false} tickLine={false}/>
+              <YAxis type="category" dataKey="name" tick={{fontSize:11,fontWeight:600}} axisLine={false} tickLine={false} width={isRTL?140:120}/>
+              <Tooltip contentStyle={{borderRadius:10,border:'none',boxShadow:'0 4px 20px rgba(0,0,0,0.1)',fontWeight:600}}/>
+              <Bar dataKey="count" name={isRTL?'حجوزات':'Bookings'} radius={[0,6,6,0]}>
+                {mostBookedServices.map((_,i)=><Cell key={i} fill={`hsl(${190+i*12},70%,${55-i*2}%)`}/>)}
+              </Bar>
+            </BarChart>
           </ResponsiveContainer>
         )}
       </Paper>

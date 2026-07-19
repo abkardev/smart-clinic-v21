@@ -88,7 +88,7 @@ export async function PUT(
 
     await logAudit(AuditAction.BOOKING_UPDATED, 'Booking', params.id,
       { changes, status: booking.status },
-      auditOptsFromRequest(req)
+      auditOptsFromRequest(req, user!)
     );
     const { doctor, ...rest } = booking;
     return apiResponse({ ...rest, doctorId: doctor });
@@ -126,7 +126,7 @@ export async function DELETE(
     await prisma.booking.delete({ where: { id: params.id } });
     await logAudit(AuditAction.BOOKING_DELETED, 'Booking', params.id,
       { name: booking.name, date: booking.date, time: booking.time },
-      auditOptsFromRequest(req)
+      auditOptsFromRequest(req, user!)
     );
     return NextResponse.json({ message: 'Booking deleted' });
   } catch (err) {

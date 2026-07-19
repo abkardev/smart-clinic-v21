@@ -40,6 +40,9 @@ export const AuditAction = {
   // System
   SETTINGS_CHANGED: 'SETTINGS_CHANGED',
   SYSTEM_EVENT: 'SYSTEM_EVENT',
+  PASSWORD_RESET: 'PASSWORD_RESET',
+  // Reminders
+  REMINDER_SENT: 'REMINDER_SENT',
   // Security
   LOGIN_FAILED: 'LOGIN_FAILED',
   PERMISSION_DENIED: 'PERMISSION_DENIED',
@@ -99,8 +102,10 @@ const ACTION_CATEGORY: Record<string, AuditCategory> = {
   SLOT_UNBLOCKED: AuditCategory.BOOKING,
   HOLIDAY_CREATED: AuditCategory.SETTINGS,
   HOLIDAY_DELETED: AuditCategory.SETTINGS,
+  PASSWORD_RESET: AuditCategory.AUTH,
   SETTINGS_CHANGED: AuditCategory.SETTINGS,
   SYSTEM_EVENT: AuditCategory.SYSTEM,
+  REMINDER_SENT: AuditCategory.BOOKING,
 };
 
 function inferCategory(action: string): AuditCategory | null {

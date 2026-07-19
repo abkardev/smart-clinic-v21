@@ -9,6 +9,11 @@ import { logger } from '@/app/lib/logger';
 
 // GET /api/offers
 export async function GET(req: NextRequest) {
+  const { user, error } = await getAuthUser(req);
+  if (error) return error;
+  const roleError = requireRole(user!, 'superadmin');
+  if (roleError) return roleError;
+
   try {
     const { searchParams } = new URL(req.url);
     const activeOnly = searchParams.get('active') === 'true';
@@ -28,7 +33,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const { user, error } = await getAuthUser(req);
   if (error) return error;
-  const roleError = requireRole(user!, 'superadmin', 'admin');
+  const roleError = requireRole(user!, 'superadmin');
   if (roleError) return roleError;
 
   try {

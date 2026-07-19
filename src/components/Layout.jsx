@@ -23,9 +23,9 @@ export default function Layout() {
     { label:t('doctors'),     path:'/doctors',     icon:<PeopleRoundedIcon/> },
     { label:t('calendar'),    path:'/calendar',    icon:<CalendarMonthRoundedIcon/> },
     { label:t('slotManager'), path:'/slots',       icon:<BlockRoundedIcon/> },
-    { label:isRTL?'العروض':'Offers',  path:'/offers',  icon:<LocalOfferRoundedIcon/> },
-    { label:isRTL?'العطلات':'Holidays',path:'/holidays',icon:<BeachAccessRoundedIcon/> },
-    ...(user?.role==='superadmin'||user?.role==='admin'?[
+    ...(user?.role==='superadmin'?[
+      { label:isRTL?'العروض':'Offers',  path:'/offers',  icon:<LocalOfferRoundedIcon/> },
+      { label:isRTL?'العطلات':'Holidays',path:'/holidays',icon:<BeachAccessRoundedIcon/> },
       { label:t('users'),     path:'/users',       icon:<ManageAccountsRoundedIcon/> },
       { label:t('auditLogs'), path:'/audit-logs',  icon:<HistoryRoundedIcon/> },
     ]:[]),

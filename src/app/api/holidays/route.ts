@@ -17,7 +17,12 @@ interface HolidayBody {
   doctorIds?: string[];
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const { user, error } = await getAuthUser(req);
+  if (error) return error;
+  const roleError = requireRole(user!, 'superadmin');
+  if (roleError) return roleError;
+
   try {
     const holidays = await prisma.holiday.findMany({
       orderBy: { createdAt: 'desc' },
@@ -40,7 +45,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const { user, error } = await getAuthUser(req);
   if (error) return error;
-  const roleError = requireRole(user!, 'superadmin', 'admin');
+  const roleError = requireRole(user!, 'superadmin');
   if (roleError) return roleError;
 
   try {

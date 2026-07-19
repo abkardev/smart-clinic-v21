@@ -6,6 +6,7 @@ import type { UserRole, UserStatus } from '@prisma/client';
 import { hashPassword } from '@/app/lib/auth';
 import { checkRateLimit } from '@/app/lib/rateLimit';
 import { logger } from '@/app/lib/logger';
+import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
 
 export async function POST(req: NextRequest) {
   try {
@@ -49,7 +50,7 @@ export async function POST(req: NextRequest) {
     const count = await prisma.user.count();
     const isFirst = count === 0;
 
-    await prisma.user.create({
+    const created = await prisma.user.create({
       data: {
         name,
         email: email.toLowerCase(),
@@ -58,6 +59,11 @@ export async function POST(req: NextRequest) {
         status: (isFirst ? 'approved' : 'pending') as UserStatus,
       },
     });
+
+    await logAudit(AuditAction.USER_CREATED, 'User', created.id,
+      { name: created.name, email: created.email, role: created.role, status: created.status },
+      auditOptsFromRequest(req)
+    );
 
     return NextResponse.json(
       {

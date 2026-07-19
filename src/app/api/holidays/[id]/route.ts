@@ -12,7 +12,7 @@ export async function DELETE(
 ) {
   const { user, error } = await getAuthUser(req);
   if (error) return error;
-  const roleError = requireRole(user!, 'superadmin', 'admin');
+  const roleError = requireRole(user!, 'superadmin');
   if (roleError) return roleError;
 
   try {

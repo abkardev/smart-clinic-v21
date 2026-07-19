@@ -6,6 +6,7 @@ import { prisma } from '@/app/lib/prisma';
 import { hashPassword } from '@/app/lib/auth';
 import { checkRateLimit } from '@/app/lib/rateLimit';
 import { logger } from '@/app/lib/logger';
+import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
 
 export async function POST(
   req: NextRequest,
@@ -44,6 +45,11 @@ export async function POST(
         resetPasswordExpires: null,
       },
     });
+
+    await logAudit(AuditAction.PASSWORD_RESET, 'User', user.id,
+      { email: user.email },
+      auditOptsFromRequest(req, { id: user.id, name: user.name, email: user.email })
+    );
 
     return NextResponse.json({ message: 'Password reset successful.' });
   } catch (err) {

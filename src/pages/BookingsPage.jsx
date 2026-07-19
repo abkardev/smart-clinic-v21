@@ -12,8 +12,8 @@ import { DataGrid } from '@mui/x-data-grid';
 
 
 import { useLang } from '../context/AppContext.jsx';
-import { getBookings, createBooking, updateBooking, deleteBooking, getDoctors, sendReminder, syncAllDoctors, extractArray } from '../services/api.js';
-import { AddRoundedIcon, DeleteRoundedIcon, EditRoundedIcon, SyncRoundedIcon, WhatsAppIcon } from '../components/icons';
+import { getBookings, createBooking, updateBooking, deleteBooking, getDoctors, sendReminder, sendEmailReminder, syncAllDoctors, extractArray } from '../services/api.js';
+import { AddRoundedIcon, DeleteRoundedIcon, EditRoundedIcon, EmailRoundedIcon, SyncRoundedIcon, WhatsAppIcon } from '../components/icons';
 
 
 const STATUS_COLORS = { pending:'warning', confirmed:'info', completed:'success', cancelled:'error', 'no_show':'secondary', 'no-show':'secondary' };
@@ -90,6 +90,8 @@ export default function BookingsPage() {
   const [editId, setEditId]     = useState(null);
   const [snackbar, setSnackbar] = useState({ open:false, message:'', severity:'success' });
   const [filters, setFilters]   = useState({ status:'', service:'', doctorId:'' });
+  const [bookingEmails, setBookingEmails] = useState({});
+  const [emailDialog, setEmailDialog] = useState({ open:false, bookingId:null, email:'' });
 
   const SERVICES = isRTL ? SERVICES_AR : SERVICES_EN;
 
@@ -152,6 +154,21 @@ export default function BookingsPage() {
     catch { notify('Failed to send','فشل الإرسال','error'); }
   };
 
+  const handleOpenEmailDialog = (bookingId, currentEmail) => {
+    setEmailDialog({ open:true, bookingId, email: currentEmail || '' });
+  };
+
+  const handleSendEmailReminder = async () => {
+    const { bookingId, email } = emailDialog;
+    if (!email) { notify('Email is required','البريد الإلكتروني مطلوب','error'); return; }
+    try {
+      await sendEmailReminder(bookingId, { email });
+      setBookingEmails(prev => ({ ...prev, [bookingId]: email }));
+      notify('Email reminder sent!','تم إرسال التذكير الإلكتروني!');
+      setEmailDialog({ open:false, bookingId:null, email:'' });
+    } catch { notify('Failed to send','فشل الإرسال','error'); }
+  };
+
   const handleSync = async () => {
     try {
       const res = await syncAllDoctors();
@@ -166,6 +183,10 @@ export default function BookingsPage() {
   const columns = useMemo(() => [
     { field:'name',   headerName: isRTL?'المريض':'Patient',  flex:1, minWidth:120 },
     { field:'phone',  headerName: isRTL?'الهاتف':'Phone',    width:130 },
+    { field:'email', headerName: isRTL?'البريد الإلكتروني':'Email', width:180,
+      valueGetter: (value, row) => bookingEmails[row.id] || '',
+      renderCell: (p) => <Typography fontSize={12} color={p.value ? 'text.primary' : 'text.disabled'}>{p.value || (isRTL ? '—' : '—')}</Typography>,
+    },
     { field:'service',headerName: isRTL?'الخدمة':'Service',  flex:1, minWidth:170,
       valueGetter: (value, row) => {
         if (!isRTL) return row.service;
@@ -193,7 +214,7 @@ export default function BookingsPage() {
       }
     },
     {
-      field:'actions', headerName: isRTL?'الإجراءات':'Actions', width:130, sortable:false,
+      field:'actions', headerName: isRTL?'الإجراءات':'Actions', width:160, sortable:false,
       renderCell:(p) => (
         <Box display="flex" gap={0.5}>
           <Tooltip title={isRTL?'تعديل الحجز':'Edit booking'}>
@@ -202,13 +223,16 @@ export default function BookingsPage() {
           <Tooltip title={isRTL?'إرسال تذكير واتساب':'Send WhatsApp reminder'}>
             <IconButton size="small" color="success" onClick={()=>handleReminder(p.row.id)}><WhatsAppIcon fontSize="small"/></IconButton>
           </Tooltip>
+          <Tooltip title={isRTL?'إرسال تذكير إلكتروني':'Send email reminder'}>
+            <IconButton size="small" color="info" onClick={()=>handleOpenEmailDialog(p.row.id, bookingEmails[p.row.id])}><EmailRoundedIcon fontSize="small"/></IconButton>
+          </Tooltip>
           <Tooltip title={isRTL?'حذف الحجز':'Delete booking'}>
             <IconButton size="small" color="error" onClick={()=>handleDelete(p.row.id)}><DeleteRoundedIcon fontSize="small"/></IconButton>
           </Tooltip>
         </Box>
       ),
     },
-  ], [isRTL, doctors]);
+  ], [isRTL, doctors, bookingEmails]);
 
   return (
     <Box>
@@ -302,6 +326,26 @@ export default function BookingsPage() {
         <DialogActions sx={{ px:3, pb:3, gap:1 }}>
           <Button onClick={()=>setOpen(false)} variant="outlined" sx={{ borderRadius:2 }}>{isRTL?'إلغاء':'Cancel'}</Button>
           <Button variant="contained" onClick={handleSave} disabled={!form.name||!form.doctorId||!form.service} sx={{ borderRadius:2, px:3 }}>{isRTL?'حفظ':'Save'}</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Email Reminder Dialog */}
+      <Dialog open={emailDialog.open} onClose={()=>setEmailDialog({...emailDialog,open:false})} maxWidth="xs" fullWidth PaperProps={{ sx:{ borderRadius:3 } }}>
+        <DialogTitle fontWeight={800}>{isRTL?'إرسال تذكير إلكتروني':'Send Email Reminder'}</DialogTitle>
+        <DialogContent sx={{ pt:'16px !important' }}>
+          <TextField
+            label={isRTL?'البريد الإلكتروني للمريض':'Patient Email'}
+            type="email"
+            value={emailDialog.email}
+            onChange={e=>setEmailDialog({...emailDialog,email:e.target.value})}
+            fullWidth
+            required
+            autoFocus
+          />
+        </DialogContent>
+        <DialogActions sx={{ px:3, pb:3, gap:1 }}>
+          <Button onClick={()=>setEmailDialog({...emailDialog,open:false})} variant="outlined" sx={{ borderRadius:2 }}>{isRTL?'إلغاء':'Cancel'}</Button>
+          <Button variant="contained" onClick={handleSendEmailReminder} disabled={!emailDialog.email} sx={{ borderRadius:2, px:3 }}>{isRTL?'إرسال':'Send'}</Button>
         </DialogActions>
       </Dialog>
 

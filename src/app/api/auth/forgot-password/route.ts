@@ -4,9 +4,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { prisma } from '@/app/lib/prisma';
 import { checkRateLimit } from '@/app/lib/rateLimit';
-import { optional } from '@/app/lib/env';
 import { sendPasswordResetEmail } from '@/app/lib/email';
 import { logger } from '@/app/lib/logger';
+import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
 
 export async function POST(req: NextRequest) {
   try {
@@ -34,6 +34,10 @@ export async function POST(req: NextRequest) {
       });
 
       await sendPasswordResetEmail(user.email, user.name, token, user.preferredLang);
+      await logAudit(AuditAction.PASSWORD_RESET, 'User', user.id,
+        { email: user.email },
+        auditOptsFromRequest(req, { id: user.id, name: user.name, email: user.email })
+      );
     }
 
     return NextResponse.json({ message: 'If an account with that email exists, a password reset link has been sent.' });
