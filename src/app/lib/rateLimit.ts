@@ -1,4 +1,5 @@
 import { prisma } from './prisma';
+import { logger } from './logger';
 
 export async function checkRateLimit(
   key: string,
@@ -28,7 +29,8 @@ export async function checkRateLimit(
     });
 
     return { allowed: true, remaining: maxRequests - (existing.count + 1), resetAt: existing.expiresAt.getTime() };
-  } catch {
+  } catch (e) {
+    logger.error('Rate limit check failed', { error: e instanceof Error ? e.message : String(e) });
     return { allowed: true, remaining: maxRequests, resetAt: Date.now() + windowMs };
   }
 }
