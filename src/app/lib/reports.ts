@@ -12,7 +12,7 @@ export interface Booking {
   notes?: string | null;
   source?: string;
   doctorId?: { id: string; nameEn?: string; nameAr?: string } | string;
-  createdAt?: string;
+  createdAt?: string | Date;
 }
 
 export function generateAppointmentReportPdf(bookings: Booking[], title: string): Buffer {
