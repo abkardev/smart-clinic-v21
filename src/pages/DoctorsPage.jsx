@@ -598,8 +598,3 @@ export default function DoctorsPage() {
     </Box>
   );
 }
-
-
-export async function getServerSideProps() {
-  return { props: {} };
-}

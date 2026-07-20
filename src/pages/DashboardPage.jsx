@@ -6,10 +6,7 @@ import { useLang } from '../context/AppContext.jsx';
 import { getDashboardStats } from '../services/api.js';
 import { InstagramIcon, PeopleRoundedIcon, TodayRoundedIcon, TrendingUpRoundedIcon, WhatsAppIcon } from '../components/icons';
 
-const STATUS_COLORS = {
-  pending: '#F59E0B', confirmed: '#0A6EBD', completed: '#10B981',
-  cancelled: '#EF4444', 'no-show': '#8B5CF6', no_show: '#8B5CF6',
-};
+import { STATUS_COLORS } from '../app/lib/constants';
 
 function StatCard({ icon, label, value, gradient, subtitle }) {
   return (
@@ -198,9 +195,4 @@ export default function DashboardPage() {
       </Paper>
     </Box>
   );
-}
-
-
-export async function getServerSideProps() {
-  return { props: {} };
 }

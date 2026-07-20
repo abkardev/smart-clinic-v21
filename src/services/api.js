@@ -56,5 +56,7 @@ export const deleteHoliday = (id) => api.delete(`/holidays/${id}`);
 
 export const getAuditLogs  = (params) => api.get('/audit-logs', { params });
 
+export const getAnalyticsOverview = (params) => api.get('/analytics/overview', { params });
+
 export const exportAppointmentsReport = (params) => api.get('/reports/appointments', { params, responseType: 'blob' });
 export const exportDoctorsReport = (params) => api.get('/reports/doctors', { params, responseType: 'blob' });

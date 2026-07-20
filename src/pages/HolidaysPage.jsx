@@ -442,8 +442,3 @@ export default function HolidaysPage() {
     </Box>
   );
 }
-
-
-export async function getServerSideProps() {
-  return { props: {} };
-}

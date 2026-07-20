@@ -232,8 +232,3 @@ export default function SlotManagerPage() {
     </Box>
   );
 }
-
-
-export async function getServerSideProps() {
-  return { props: {} };
-}

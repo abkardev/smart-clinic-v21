@@ -182,6 +182,10 @@ model Booking {
   @@index([phone])
   @@index([status])
   @@index([instagramPsid])
+  @@index([date])                         // Accelerates dashboard date-range queries + calendar filtering
+  @@index([source])                       // Accelerates dashboard WhatsApp/Instagram booking counts
+  @@index([service])                      // Accelerates analytics service-grouped aggregations
+  @@index([doctorId, date, status])       // Accelerates availability slot calculation queries
   @@map("bookings")
 }
 

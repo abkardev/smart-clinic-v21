@@ -293,8 +293,3 @@ export default function AuditLogsPage() {
     </Box>
   );
 }
-
-
-export async function getServerSideProps() {
-  return { props: {} };
-}

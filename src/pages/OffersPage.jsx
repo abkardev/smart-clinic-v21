@@ -218,8 +218,3 @@ export default function OffersPage() {
     </Box>
   );
 }
-
-
-export async function getServerSideProps() {
-  return { props: {} };
-}

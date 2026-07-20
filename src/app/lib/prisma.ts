@@ -18,10 +18,12 @@ if (missingCfg.length > 0) {
 }
 
 const PRISMA_CLIENT_VERSION = require('@prisma/client/package.json').version;
-console.log(
-  `\n  Node.js ${process.version} · ${process.platform} (${process.arch})` +
-  `\n  Prisma Client ${PRISMA_CLIENT_VERSION} · ${process.env.NODE_ENV || 'development'}\n`
-);
+logger.info('Prisma client initialized', {
+  node: process.version,
+  platform: `${process.platform} (${process.arch})`,
+  prismaVersion: PRISMA_CLIENT_VERSION,
+  env: process.env.NODE_ENV || 'development',
+});
 
 required('DATABASE_URL');
 
@@ -51,11 +53,10 @@ if (process.env.NODE_ENV !== 'production') {
   const looksLikeNeon = url.includes('neon.tech');
   const looksPooled   = url.includes('-pooler');
   if (looksLikeNeon && !looksPooled) {
-    console.warn(
-      '\n⚠️  DATABASE_URL appears to be a Neon DIRECT connection (no "-pooler" in the hostname).\n' +
-      '   This will exhaust its small connection limit almost immediately under `next dev`.\n' +
-      '   Fix: copy the "Pooled connection" string from your Neon dashboard instead.\n' +
-      '   See .env.example for details.\n'
+    logger.warn(
+      'DATABASE_URL appears to be a Neon DIRECT connection (no "-pooler" in the hostname). ' +
+      'This will exhaust its small connection limit under `next dev`. ' +
+      'Use the "Pooled connection" string from your Neon dashboard instead.'
     );
   }
 }

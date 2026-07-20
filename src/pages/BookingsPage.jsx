@@ -12,17 +12,9 @@ import { DataGrid } from '@mui/x-data-grid';
 
 
 import { useLang } from '../context/AppContext.jsx';
-import { getBookings, createBooking, updateBooking, deleteBooking, getDoctors, sendReminder, sendEmailReminder, syncAllDoctors, extractArray } from '../services/api.js';
+import { getBookings, createBooking, updateBooking, deleteBooking, getDoctors, sendReminder, sendEmailReminder, extractArray } from '../services/api.js';
 import { AddRoundedIcon, DeleteRoundedIcon, EditRoundedIcon, EmailRoundedIcon, SyncRoundedIcon, WhatsAppIcon } from '../components/icons';
-
-
-const STATUS_COLORS = { pending:'warning', confirmed:'info', completed:'success', cancelled:'error', 'no_show':'secondary', 'no-show':'secondary' };
-
-const STATUS_AR = { pending:'قيد الانتظار', confirmed:'مؤكد', completed:'مكتمل', cancelled:'ملغي', 'no_show':'لم يحضر', 'no-show':'لم يحضر' };
-const STATUS_EN = { pending:'Pending',      confirmed:'Confirmed', completed:'Completed', cancelled:'Cancelled', 'no_show':'No Show', 'no-show':'No Show' };
-
-const SERVICES_EN = ['General Consultation','Follow-up','Specialist Visit','Lab Results Review','Prescription Renewal'];
-const SERVICES_AR = ['استشارة عامة','متابعة','زيارة متخصص','مراجعة نتائج مختبر','تجديد وصفة'];
+import { MUI_STATUS_COLORS, STATUS_LABEL_EN, STATUS_LABEL_AR, SERVICES_EN, SERVICES_AR, STATUS_KEYS } from '../app/lib/constants';
 
 const AR_GRID = {
   // empty state
@@ -178,8 +170,6 @@ export default function BookingsPage() {
     } catch { notify('Sync failed','فشلت المزامنة','error'); }
   };
 
-  const statusKeys = ['pending','confirmed','completed','cancelled','no-show'];
-
   const columns = useMemo(() => [
     { field:'name',   headerName: isRTL?'المريض':'Patient',  flex:1, minWidth:120 },
     { field:'phone',  headerName: isRTL?'الهاتف':'Phone',    width:130 },
@@ -205,7 +195,7 @@ export default function BookingsPage() {
     { field:'time',   headerName: isRTL?'الوقت':'Time',      width:80 },
     {
       field:'status', headerName: isRTL?'الحالة':'Status', width:130,
-      renderCell:(p) => <Chip label={isRTL ? STATUS_AR[p.value]||p.value : STATUS_EN[p.value]||p.value} color={STATUS_COLORS[p.value]||'default'} size="small" sx={{ fontWeight:700 }}/>,
+      renderCell:(p) => <Chip label={isRTL ? STATUS_LABEL_AR[p.value]||p.value : STATUS_LABEL_EN[p.value]||p.value} color={MUI_STATUS_COLORS[p.value]||'default'} size="small" sx={{ fontWeight:700 }}/>,
     },
     { field:'source', headerName: isRTL?'المصدر':'Source', width:110,
       renderCell:(p) => {
@@ -251,7 +241,7 @@ export default function BookingsPage() {
             <InputLabel>{isRTL?'الحالة':'Status'}</InputLabel>
             <Select value={filters.status} label={isRTL?'الحالة':'Status'} onChange={e=>setFilters({...filters,status:e.target.value})}>
               <MenuItem value="">{isRTL?'الكل':'All'}</MenuItem>
-              {statusKeys.map(s=><MenuItem key={s} value={s}>{isRTL?STATUS_AR[s]:STATUS_EN[s]}</MenuItem>)}
+              {STATUS_KEYS.map(s=><MenuItem key={s} value={s}>{isRTL?STATUS_LABEL_AR[s]:STATUS_LABEL_EN[s]}</MenuItem>)}
             </Select>
           </FormControl>
           {/* Service filter */}
@@ -318,7 +308,7 @@ export default function BookingsPage() {
           <FormControl fullWidth>
             <InputLabel>{isRTL?'الحالة':'Status'}</InputLabel>
             <Select value={form.status} label={isRTL?'الحالة':'Status'} onChange={e=>setForm({...form,status:e.target.value})}>
-              {statusKeys.map(s=><MenuItem key={s} value={s}>{isRTL?STATUS_AR[s]:STATUS_EN[s]}</MenuItem>)}
+              {STATUS_KEYS.map(s=><MenuItem key={s} value={s}>{isRTL?STATUS_LABEL_AR[s]:STATUS_LABEL_EN[s]}</MenuItem>)}
             </Select>
           </FormControl>
           <TextField label={isRTL?'ملاحظات':'Notes'} value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} fullWidth multiline rows={2}/>
@@ -354,9 +344,4 @@ export default function BookingsPage() {
       </Snackbar>
     </Box>
   );
-}
-
-
-export async function getServerSideProps() {
-  return { props: {} };
 }

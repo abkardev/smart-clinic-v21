@@ -347,8 +347,3 @@ export default function UsersPage() {
     </Box>
   );
 }
-
-
-export async function getServerSideProps() {
-  return { props: {} };
-}

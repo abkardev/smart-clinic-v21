@@ -2,18 +2,18 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   Box, Typography, Paper, Grid, Select, MenuItem, FormControl, InputLabel,
-  Chip, Skeleton, Divider, Avatar, Button,
+  Chip, Skeleton, Avatar, Button,
 } from '@mui/material';
 import {
   AreaChart, Area, LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
 import { useLang } from '../context/AppContext.jsx';
-import { getBookings, getDoctors, extractArray, exportAppointmentsReport } from '../services/api.js';
+import { getAnalyticsOverview, exportAppointmentsReport } from '../services/api.js';
 import { DashboardRoundedIcon, DownloadRoundedIcon, InstagramIcon, TrendingDownRoundedIcon, TrendingUpRoundedIcon, WhatsAppIcon } from '../components/icons';
+import { STATUS_COLORS } from '../app/lib/constants';
 
-const STATUS_COLORS  = { pending:'#F59E0B', confirmed:'#0A6EBD', completed:'#10B981', cancelled:'#EF4444', 'no-show':'#8B5CF6', no_show:'#8B5CF6' };
-const SOURCE_COLORS  = { whatsapp:'#25D366', instagram:'#E1306C', dashboard:'#0A6EBD', api:'#8B5CF6' };
+const SOURCE_COLORS = { whatsapp:'#25D366', instagram:'#E1306C', dashboard:'#0A6EBD', api:'#8B5CF6' };
 const MONTH_NAMES_EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const MONTH_NAMES_AR = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
 
@@ -47,23 +47,20 @@ function ChartSkeleton({ height = 240 }) {
 
 export default function AnalyticsPage() {
   const { t, isRTL } = useLang();
-  const [bookings, setBookings] = useState([]);
-  const [doctors, setDoctors] = useState([]);
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [period, setPeriod] = useState('30'); // days
+  const [period, setPeriod] = useState('30');
 
   const MONTH_NAMES = isRTL ? MONTH_NAMES_AR : MONTH_NAMES_EN;
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [bRes, dRes] = await Promise.all([getBookings(), getDoctors()]);
-      const bData = extractArray(bRes.data);
-      setBookings(bData);
-      setDoctors(dRes.data);
+      const res = await getAnalyticsOverview({ period });
+      setData(res.data);
     } catch {}
     finally { setLoading(false); }
-  }, []);
+  }, [period]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -76,129 +73,38 @@ export default function AnalyticsPage() {
       const url = URL.createObjectURL(new Blob([res.data]));
       const a = document.createElement('a'); a.href = url; a.download = `appointments-report.${format}`; a.click();
       URL.revokeObjectURL(url);
-    } catch { /* ignore */ }
+    } catch {}
   };
 
-  // ── Computed analytics ────────────────────────────────────────────────────
-  const now = new Date();
-  const cutoff = new Date(now); cutoff.setDate(now.getDate() - parseInt(period));
-
-  const filtered = bookings.filter(b => new Date(b.date) >= cutoff);
-  const prev = bookings.filter(b => {
-    const d = new Date(b.date);
-    const prevCutoff = new Date(cutoff); prevCutoff.setDate(cutoff.getDate() - parseInt(period));
-    return d >= prevCutoff && d < cutoff;
-  });
-
-  const trendPct = (cur, prv) => prv === 0 ? 100 : Math.round(((cur - prv) / prv) * 100);
-
-  const totalCur = filtered.length;
-  const totalPrv = prev.length;
-  const completedCur = filtered.filter(b=>b.status==='completed').length;
-  const completedPrv = prev.filter(b=>b.status==='completed').length;
-  const cancelledCur = filtered.filter(b=>b.status==='cancelled').length;
-  const noShowCur    = filtered.filter(b=>b.status==='no-show'||b.status==='no_show').length;
-  const cancelRate   = totalCur > 0 ? Math.round((cancelledCur / totalCur) * 100) : 0;
-  const noShowRate   = totalCur > 0 ? Math.round((noShowCur / totalCur) * 100) : 0;
-  const waCur        = filtered.filter(b=>b.source==='whatsapp').length;
-  const igCur        = filtered.filter(b=>b.source==='instagram').length;
-
-  // Bookings over time (group by date for last N days)
-  const dateMap = {};
-  for (let i = parseInt(period) - 1; i >= 0; i--) {
-    const d = new Date(now); d.setDate(now.getDate() - i);
-    const key = d.toISOString().split('T')[0];
-    dateMap[key] = { date: key, total:0, completed:0, cancelled:0 };
-  }
-  filtered.forEach(b => { if (dateMap[b.date]) { dateMap[b.date].total++; if(b.status==='completed') dateMap[b.date].completed++; if(b.status==='cancelled') dateMap[b.date].cancelled++; } });
-  const trendData = Object.values(dateMap).map(d => ({ ...d, label: d.date.slice(5) }));
-
-  // Aggregate by week if period > 30
-  const groupedTrend = parseInt(period) > 30
-    ? trendData.reduce((acc, d, i) => {
-        const wk = Math.floor(i / 7);
-        if (!acc[wk]) acc[wk] = { label: d.label, total:0, completed:0, cancelled:0 };
-        acc[wk].total += d.total; acc[wk].completed += d.completed; acc[wk].cancelled += d.cancelled;
-        return acc;
-      }, [])
-    : trendData;
-
-  // Status breakdown
-  const statusData = Object.entries(
-    filtered.reduce((a, b) => { a[b.status] = (a[b.status]||0)+1; return a; }, {})
-  ).map(([k,v]) => ({ name: t(k)||k, value:v, color: STATUS_COLORS[k]||'#94A3B8' }));
-
-  // Source breakdown
-  const sourceData = Object.entries(
-    filtered.reduce((a, b) => { const s = b.source||'dashboard'; a[s] = (a[s]||0)+1; return a; }, {})
-  ).map(([k,v]) => ({ name: k, value:v, color: SOURCE_COLORS[k]||'#94A3B8' }));
-
-  // Doctor performance — build a lookup map from the doctors array (already fetched)
-  const doctorLookup = {};
-  doctors.forEach(d => { doctorLookup[d.id] = d; });
-
-  const doctorMap = {};
-  filtered.forEach(b => {
-    // doctorId may be a string ID or a populated object — extract the raw ID string
-    const id = (typeof b.doctorId === 'object' && b.doctorId !== null)
-      ? (b.doctorId.id || b.doctorId.id || b.doctorId)
-      : b.doctorId;
-    if (!id) return;
-
-    // Look up the doctor from the doctors list (always has nameEn/nameAr)
-    const docObj = doctorLookup[id?.toString()] || doctorLookup[id];
-    const name   = docObj
-      ? (isRTL ? (docObj.nameAr || docObj.nameEn) : (docObj.nameEn || docObj.nameAr))
-      : (isRTL ? 'غير معروف' : 'Unknown');
-    const nameEn = docObj?.nameEn || name;
-    const nameAr = docObj?.nameAr || name;
-
-    if (!doctorMap[id]) doctorMap[id] = { name, nameEn, nameAr, total:0, completed:0, cancelled:0, noShow:0 };
-    doctorMap[id].total++;
-    if (b.status==='completed') doctorMap[id].completed++;
-    if (b.status==='cancelled') doctorMap[id].cancelled++;
-    if (b.status==='no-show'||b.status==='no_show') doctorMap[id].noShow++;
-  });
-  const doctorPerf = Object.values(doctorMap)
-    .map(d => ({ ...d, rate: d.total ? Math.round((d.completed/d.total)*100) : 0 }))
-    .sort((a,b)=>b.total-a.total);
-
-  // Peak hours
-  const hourMap = {};
-  filtered.forEach(b => { const h = b.time?.slice(0,2); if(h) hourMap[h] = (hourMap[h]||0)+1; });
-  const peakData = Array.from({length:13},(_,i)=> {
-    const h = String(i+7).padStart(2,'0');
-    return { hour: `${h}:00`, count: hourMap[h]||0 };
-  });
-
-  // Monthly trend
-  const monthlyMap = {};
-  bookings.forEach(b => {
-    const m = b.date?.slice(0,7);
-    if (!m) return;
-    if (!monthlyMap[m]) monthlyMap[m] = { month:m, total:0, completed:0 };
-    monthlyMap[m].total++;
-    if(b.status==='completed') monthlyMap[m].completed++;
-  });
-  const monthlyData = Object.values(monthlyMap).sort((a,b)=>a.month.localeCompare(b.month)).slice(-6)
-    .map(d => ({ ...d, label: MONTH_NAMES[parseInt(d.month.slice(5))-1] }));
-
-  // Most booked services
-  const servicesCount = {};
-  filtered.forEach(b => { servicesCount[b.service] = (servicesCount[b.service] || 0) + 1; });
-  const mostBookedServices = Object.entries(servicesCount)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10)
-    .map(([n, c]) => ({ name: n, count: c }));
+  const d = data || { total:{}, completed:{}, cancelled:{current:0,rate:0}, noShow:{current:0,rate:0}, whatsapp:0, instagram:0, trendData:[], statusBreakdown:[], sourceBreakdown:[], doctorPerformance:[], peakHours:[], monthlyTrend:[], mostBookedServices:[] };
+  const trendPct = d.total?.trend;
+  const completionsPct = d.completed?.trend;
 
   const kpis = [
-    { icon:<TrendingUpRoundedIcon/>, label: isRTL?'إجمالي الحجوزات':t('totalBookings'), value:totalCur, trend:trendPct(totalCur,totalPrv), color:'#0A6EBD', sub: isRTL?`${prev.length} في الفترة السابقة`:`${prev.length} prev period` },
-    { icon:<DashboardRoundedIcon/>,  label: isRTL?'مكتملة':t('completed'),              value:completedCur, trend:trendPct(completedCur,completedPrv), color:'#10B981' },
-    { icon:<TrendingDownRoundedIcon/>,label:isRTL?'ملغاة':t('cancelled'),              value:`${cancelledCur} (${cancelRate}%)`, color:'#EF4444' },
-    { icon:<TrendingDownRoundedIcon/>,label:isRTL?'لم يحضر':t('noShow'),               value:`${noShowCur} (${noShowRate}%)`,    color:'#8B5CF6' },
-    { icon:<WhatsAppIcon/>,           label:t('whatsappBookings'),                      value:waCur,        color:'#25D366', sub:t('viaBot') },
-    { icon:<InstagramIcon/>,          label:t('instagramBookings'),                     value:igCur,        color:'#E1306C', sub:t('viaBot') },
+    { icon:<TrendingUpRoundedIcon/>, label: isRTL?'إجمالي الحجوزات':t('totalBookings'), value:d.total?.current||0, trend:trendPct, color:'#0A6EBD', sub: isRTL?`${d.total?.previous||0} في الفترة السابقة`:`${d.total?.previous||0} prev period` },
+    { icon:<DashboardRoundedIcon/>,  label: isRTL?'مكتملة':t('completed'),              value:d.completed?.current||0, trend:completionsPct, color:'#10B981' },
+    { icon:<TrendingDownRoundedIcon/>,label:isRTL?'ملغاة':t('cancelled'),              value:`${d.cancelled?.current||0} (${d.cancelled?.rate||0}%)`, color:'#EF4444' },
+    { icon:<TrendingDownRoundedIcon/>,label:isRTL?'لم يحضر':t('noShow'),               value:`${d.noShow?.current||0} (${d.noShow?.rate||0}%)`,    color:'#8B5CF6' },
+    { icon:<WhatsAppIcon/>,           label:t('whatsappBookings'),                      value:d.whatsapp||0,        color:'#25D366', sub:t('viaBot') },
+    { icon:<InstagramIcon/>,          label:t('instagramBookings'),                     value:d.instagram||0,       color:'#E1306C', sub:t('viaBot') },
   ];
+
+  const statusData = d.statusBreakdown.map(s => ({
+    name: t(s.name) || s.name,
+    value: s.value,
+    color: STATUS_COLORS[s.name] || '#94A3B8',
+  }));
+
+  const sourceData = d.sourceBreakdown.map(s => ({
+    name: s.name,
+    value: s.value,
+    color: SOURCE_COLORS[s.name] || '#94A3B8',
+  }));
+
+  const monthlyData = d.monthlyTrend.map(m => ({
+    ...m,
+    label: MONTH_NAMES[parseInt(m.month.slice(5)) - 1] || m.month,
+  }));
 
   return (
     <Box>
@@ -210,15 +116,9 @@ export default function AnalyticsPage() {
           </Typography>
         </Box>
         <Box display="flex" gap={0.5} alignItems="center" flexWrap="wrap">
-          <Button size="small" variant="outlined" startIcon={<DownloadRoundedIcon />} onClick={() => handleExport('pdf')} sx={{ textTransform:'none', fontSize:12 }}>
-            PDF
-          </Button>
-          <Button size="small" variant="outlined" startIcon={<DownloadRoundedIcon />} onClick={() => handleExport('csv')} sx={{ textTransform:'none', fontSize:12 }}>
-            CSV
-          </Button>
-          <Button size="small" variant="outlined" startIcon={<DownloadRoundedIcon />} onClick={() => handleExport('xlsx')} sx={{ textTransform:'none', fontSize:12 }}>
-            Excel
-          </Button>
+          <Button size="small" variant="outlined" startIcon={<DownloadRoundedIcon />} onClick={() => handleExport('pdf')} sx={{ textTransform:'none', fontSize:12 }}>PDF</Button>
+          <Button size="small" variant="outlined" startIcon={<DownloadRoundedIcon />} onClick={() => handleExport('csv')} sx={{ textTransform:'none', fontSize:12 }}>CSV</Button>
+          <Button size="small" variant="outlined" startIcon={<DownloadRoundedIcon />} onClick={() => handleExport('xlsx')} sx={{ textTransform:'none', fontSize:12 }}>Excel</Button>
           <FormControl size="small" sx={{ minWidth: 160 }}>
             <InputLabel>{isRTL?'الفترة الزمنية':'Time Period'}</InputLabel>
             <Select value={period} label={isRTL?'الفترة الزمنية':'Time Period'} onChange={e=>setPeriod(e.target.value)}>
@@ -231,7 +131,6 @@ export default function AnalyticsPage() {
         </Box>
       </Box>
 
-      {/* KPI Row */}
       <Grid container spacing={2} mb={3.5}>
         {loading
           ? Array.from({length:6}).map((_,i)=><Grid item xs={6} sm={4} lg={2} key={i}><Paper elevation={0} sx={{p:2.5,borderRadius:3,border:'1px solid rgba(148,163,184,0.15)'}}><Skeleton width={36} height={36} sx={{borderRadius:2,mb:1}}/><Skeleton width="60%" height={34}/><Skeleton width="80%" height={16} sx={{mt:0.5}}/></Paper></Grid>)
@@ -239,12 +138,11 @@ export default function AnalyticsPage() {
         }
       </Grid>
 
-      {/* Trend over time */}
       <Paper elevation={0} sx={{ p:3, mb:3, border:'1px solid rgba(148,163,184,0.15)', borderRadius:3 }}>
         <SectionTitle>{isRTL?'الحجوزات عبر الزمن':'Bookings Over Time'}</SectionTitle>
         {loading ? <ChartSkeleton height={260}/> : (
           <ResponsiveContainer width="100%" height={260}>
-            <AreaChart data={groupedTrend} margin={{top:5,right:20,left:-20,bottom:5}}>
+            <AreaChart data={d.trendData} margin={{top:5,right:20,left:-20,bottom:5}}>
               <defs>
                 <linearGradient id="gradTotal" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#0A6EBD" stopOpacity={0.3}/><stop offset="95%" stopColor="#0A6EBD" stopOpacity={0}/></linearGradient>
                 <linearGradient id="gradComp"  x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10B981" stopOpacity={0.3}/><stop offset="95%" stopColor="#10B981" stopOpacity={0}/></linearGradient>
@@ -263,7 +161,6 @@ export default function AnalyticsPage() {
       </Paper>
 
       <Grid container spacing={2.5} mb={3}>
-        {/* Status Pie */}
         <Grid item xs={12} md={4}>
           <Paper elevation={0} sx={{ p:3, height:'100%', border:'1px solid rgba(148,163,184,0.15)', borderRadius:3 }}>
             <SectionTitle>{isRTL?'توزيع الحالات':t('bookingsByStatus')}</SectionTitle>
@@ -290,7 +187,6 @@ export default function AnalyticsPage() {
           </Paper>
         </Grid>
 
-        {/* Source Pie */}
         <Grid item xs={12} md={4}>
           <Paper elevation={0} sx={{ p:3, height:'100%', border:'1px solid rgba(148,163,184,0.15)', borderRadius:3 }}>
             <SectionTitle>{isRTL?'مصادر الحجوزات':'Booking Sources'}</SectionTitle>
@@ -317,19 +213,18 @@ export default function AnalyticsPage() {
           </Paper>
         </Grid>
 
-        {/* Peak hours */}
         <Grid item xs={12} md={4}>
           <Paper elevation={0} sx={{ p:3, height:'100%', border:'1px solid rgba(148,163,184,0.15)', borderRadius:3 }}>
             <SectionTitle>{isRTL?'أوقات الذروة':'Peak Hours'}</SectionTitle>
             {loading ? <ChartSkeleton height={220}/> : (
               <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={peakData} margin={{top:5,right:0,left:-30,bottom:5}}>
+                <BarChart data={d.peakHours} margin={{top:5,right:0,left:-30,bottom:5}}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9"/>
                   <XAxis dataKey="hour" tick={{fontSize:9,fontWeight:600}} axisLine={false} tickLine={false}/>
                   <YAxis tick={{fontSize:11}} axisLine={false} tickLine={false}/>
                   <Tooltip contentStyle={{borderRadius:10,border:'none',boxShadow:'0 4px 20px rgba(0,0,0,0.1)',fontWeight:600}}/>
                   <Bar dataKey="count" name={isRTL?'حجوزات':'Bookings'} radius={[6,6,0,0]}>
-                    {peakData.map((_,i)=><Cell key={i} fill={`hsl(${210 + i*4}, 80%, ${50+i*1}%)`}/>)}
+                    {d.peakHours.map((_,i)=><Cell key={i} fill={`hsl(${210 + i*4}, 80%, ${50+i*1}%)`}/>)}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -338,7 +233,6 @@ export default function AnalyticsPage() {
         </Grid>
       </Grid>
 
-      {/* Monthly trend line */}
       <Paper elevation={0} sx={{ p:3, mb:3, border:'1px solid rgba(148,163,184,0.15)', borderRadius:3 }}>
         <SectionTitle>{isRTL?'الاتجاه الشهري (6 أشهر)':'Monthly Trend (6 months)'}</SectionTitle>
         {loading ? <ChartSkeleton height={220}/> : (
@@ -356,27 +250,25 @@ export default function AnalyticsPage() {
         )}
       </Paper>
 
-      {/* Most Booked Services */}
       <Paper elevation={0} sx={{ p:3, mb:3, border:'1px solid rgba(148,163,184,0.15)', borderRadius:3 }}>
         <SectionTitle>{isRTL?'الخدمات الأكثر حجزاً':'Most Booked Services'}</SectionTitle>
-        {loading ? <ChartSkeleton height={280}/> : mostBookedServices.length === 0 ? (
+        {loading ? <ChartSkeleton height={280}/> : d.mostBookedServices.length === 0 ? (
           <Typography color="text.disabled" textAlign="center" py={3}>{t('noData')}</Typography>
         ) : (
-          <ResponsiveContainer width="100%" height={Math.max(200, mostBookedServices.length * 36)}>
-            <BarChart data={mostBookedServices} layout="vertical" margin={{top:5,right:20,left:10,bottom:5}}>
+          <ResponsiveContainer width="100%" height={Math.max(200, d.mostBookedServices.length * 36)}>
+            <BarChart data={d.mostBookedServices} layout="vertical" margin={{top:5,right:20,left:10,bottom:5}}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9"/>
               <XAxis type="number" tick={{fontSize:11}} axisLine={false} tickLine={false}/>
               <YAxis type="category" dataKey="name" tick={{fontSize:11,fontWeight:600}} axisLine={false} tickLine={false} width={isRTL?140:120}/>
               <Tooltip contentStyle={{borderRadius:10,border:'none',boxShadow:'0 4px 20px rgba(0,0,0,0.1)',fontWeight:600}}/>
               <Bar dataKey="count" name={isRTL?'حجوزات':'Bookings'} radius={[0,6,6,0]}>
-                {mostBookedServices.map((_,i)=><Cell key={i} fill={`hsl(${190+i*12},70%,${55-i*2}%)`}/>)}
+                {d.mostBookedServices.map((_,i)=><Cell key={i} fill={`hsl(${190+i*12},70%,${55-i*2}%)`}/>)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
         )}
       </Paper>
 
-      {/* Doctor performance table */}
       <Paper elevation={0} sx={{ p:3, border:'1px solid rgba(148,163,184,0.15)', borderRadius:3 }}>
         <SectionTitle>{isRTL?'أداء الأطباء':'Doctor Performance'}</SectionTitle>
         {loading ? (
@@ -387,7 +279,7 @@ export default function AnalyticsPage() {
               <Skeleton width={80} height={26} sx={{borderRadius:2}}/>
             </Box>
           ))
-        ) : doctorPerf.length === 0 ? (
+        ) : d.doctorPerformance.length === 0 ? (
           <Typography color="text.disabled" textAlign="center" py={3}>{t('noData')}</Typography>
         ) : (
           <Box>
@@ -396,25 +288,25 @@ export default function AnalyticsPage() {
                 <Typography key={i} fontSize={11} fontWeight={700} color="text.secondary">{h}</Typography>
               ))}
             </Box>
-            {doctorPerf.map((d, i) => (
+            {d.doctorPerformance.map((doc, i) => (
               <Box key={i} sx={{ display:'grid', gridTemplateColumns:'1fr 80px 80px 80px 80px 100px', gap:1, px:2, py:1.5, borderRadius:2, '&:hover':{bgcolor:'#F8FAFC'}, transition:'all 0.15s', alignItems:'center' }}>
                 <Box sx={{ display:'flex', alignItems:'center', gap:1.5 }}>
                   <Avatar sx={{ width:32, height:32, fontSize:13, fontWeight:700, bgcolor:'#EFF6FF', color:'#0A6EBD' }}>
-                    {(isRTL ? (d.nameAr || d.nameEn) : (d.nameEn || d.nameAr) || '?').charAt(0)}
+                    {(isRTL ? (doc.nameAr || doc.nameEn) : (doc.nameEn || doc.nameAr) || '?').charAt(0)}
                   </Avatar>
                   <Typography fontWeight={600} fontSize={13}>
-                    {isRTL ? `د. ${d.nameAr || d.nameEn}` : `Dr. ${d.nameEn || d.nameAr}`}
+                    {isRTL ? `د. ${doc.nameAr || doc.nameEn}` : `Dr. ${doc.nameEn || doc.nameAr}`}
                   </Typography>
                 </Box>
-                <Typography fontWeight={700} fontSize={14}>{d.total}</Typography>
-                <Typography fontWeight={600} fontSize={13} sx={{color:'#10B981'}}>{d.completed}</Typography>
-                <Typography fontWeight={600} fontSize={13} sx={{color:'#EF4444'}}>{d.cancelled}</Typography>
-                <Typography fontWeight={600} fontSize={13} sx={{color:'#8B5CF6'}}>{d.noShow}</Typography>
+                <Typography fontWeight={700} fontSize={14}>{doc.total}</Typography>
+                <Typography fontWeight={600} fontSize={13} sx={{color:'#10B981'}}>{doc.completed}</Typography>
+                <Typography fontWeight={600} fontSize={13} sx={{color:'#EF4444'}}>{doc.cancelled}</Typography>
+                <Typography fontWeight={600} fontSize={13} sx={{color:'#8B5CF6'}}>{doc.noShow}</Typography>
                 <Box sx={{ display:'flex', alignItems:'center', gap:1 }}>
                   <Box sx={{ flex:1, height:6, bgcolor:'#E2E8F0', borderRadius:99, overflow:'hidden' }}>
-                    <Box sx={{ height:'100%', width:`${d.rate}%`, bgcolor: d.rate>=70?'#10B981':d.rate>=40?'#F59E0B':'#EF4444', borderRadius:99, transition:'width 0.5s' }}/>
+                    <Box sx={{ height:'100%', width:`${doc.rate}%`, bgcolor: doc.rate>=70?'#10B981':doc.rate>=40?'#F59E0B':'#EF4444', borderRadius:99, transition:'width 0.5s' }}/>
                   </Box>
-                  <Typography fontSize={11} fontWeight={700} color="text.secondary">{d.rate}%</Typography>
+                  <Typography fontSize={11} fontWeight={700} color="text.secondary">{doc.rate}%</Typography>
                 </Box>
               </Box>
             ))}
@@ -423,9 +315,4 @@ export default function AnalyticsPage() {
       </Paper>
     </Box>
   );
-}
-
-
-export async function getServerSideProps() {
-  return { props: {} };
 }

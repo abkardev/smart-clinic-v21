@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+const SECURITY_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+};
+
 const PUBLIC_PREFIXES = [
   '/api/auth/login',
   '/api/auth/register',
@@ -26,20 +32,37 @@ function isValidJwtFormat(token: string): boolean {
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  if (!pathname.startsWith('/api/')) return NextResponse.next();
-  if (PUBLIC_PREFIXES.some(p => pathname.startsWith(p))) return NextResponse.next();
 
-  const auth = req.headers.get('authorization');
-  if (!auth?.startsWith('Bearer ')) {
-    return NextResponse.json({ message: 'Not authenticated' }, { status: 401 });
+  if (pathname.startsWith('/api/')) {
+    if (PUBLIC_PREFIXES.some(p => pathname.startsWith(p))) {
+      const res = NextResponse.next();
+      addSecurityHeaders(res);
+      return res;
+    }
+
+    const auth = req.headers.get('authorization');
+    if (!auth?.startsWith('Bearer ')) {
+      return NextResponse.json({ message: 'Not authenticated' }, { status: 401 });
+    }
+
+    const token = auth.slice(7);
+    if (!isValidJwtFormat(token)) {
+      return NextResponse.json({ message: 'Invalid token format' }, { status: 401 });
+    }
   }
 
-  const token = auth.slice(7);
-  if (!isValidJwtFormat(token)) {
-    return NextResponse.json({ message: 'Invalid token format' }, { status: 401 });
-  }
+  const res = NextResponse.next();
+  addSecurityHeaders(res);
+  return res;
+}
 
-  return NextResponse.next();
+function addSecurityHeaders(res: NextResponse) {
+  Object.entries(SECURITY_HEADERS).forEach(([key, value]) => {
+    res.headers.set(key, value);
+  });
+  if (process.env.NODE_ENV === 'production') {
+    res.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
 }
 
 export const config = {

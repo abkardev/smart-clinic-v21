@@ -326,13 +326,6 @@ export interface UpcomingDay {
   lastSlot: string | null;     // "16:30" or null
   isToday: boolean;
   isTomorrow: boolean;
-  // Future extensibility — reserved (unused, no-op)
-  // doctorName?: string;
-  // branch?: string;
-  // specialty?: string;
-  // estimatedDuration?: number;
-  // price?: number;
-  // capacityRemaining?: number;
 }
 
 export interface NearestAppointment {
