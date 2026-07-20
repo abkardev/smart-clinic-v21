@@ -38,6 +38,10 @@ const nextConfig = {
   webpack(config, { isServer }) {
     config.ignoreWarnings = [{ module: /node_modules\/googleapis/ }];
 
+    if (isServer) {
+      config.externals = [...(config.externals || []), 'jspdf'];
+    }
+
     if (!isServer) {
       config.output = {
         ...config.output,

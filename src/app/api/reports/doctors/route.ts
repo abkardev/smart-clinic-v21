@@ -4,7 +4,6 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
 import { getAuthUser, requireRole } from '@/app/lib/auth';
 import { logger } from '@/app/lib/logger';
-import { jsPDF } from 'jspdf';
 import { generateExcel, generateCsv, formatDoctorReport } from '@/app/lib/reports';
 
 export async function GET(req: NextRequest) {
@@ -66,6 +65,7 @@ export async function GET(req: NextRequest) {
       rate: r.successRate,
     }));
 
+    const { jsPDF } = await import('jspdf');
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
     doc.setFontSize(16);

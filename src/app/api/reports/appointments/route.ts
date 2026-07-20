@@ -82,7 +82,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const pdfBuffer = generateAppointmentReportPdf(bookings, 'Appointments Report');
+    const pdfBuffer = await generateAppointmentReportPdf(bookings, 'Appointments Report');
     return new Response(new Uint8Array(pdfBuffer), {
       status: 200,
       headers: {

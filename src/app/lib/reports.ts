@@ -1,4 +1,3 @@
-import { jsPDF } from 'jspdf';
 import * as XLSX from 'xlsx';
 import type { Booking, Doctor, Prisma } from '@prisma/client';
 
@@ -6,7 +5,8 @@ type BookingWithDoctor = Prisma.BookingGetPayload<{
   include: { doctor: { select: { id: true; nameEn: true; nameAr: true } } }
 }>;
 
-export function generateAppointmentReportPdf(bookings: BookingWithDoctor[], title: string): ArrayBuffer {
+export async function generateAppointmentReportPdf(bookings: BookingWithDoctor[], title: string): Promise<ArrayBuffer> {
+  const { jsPDF } = await import('jspdf');
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
   doc.setFontSize(16);
