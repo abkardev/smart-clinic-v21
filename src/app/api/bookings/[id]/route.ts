@@ -7,7 +7,7 @@ import { getAuthUser, requireRole } from '@/app/lib/auth';
 import { apiResponse, toDbStatus } from '@/app/lib/apiResponse';
 import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
 import { logger } from '@/app/lib/logger';
-import type { BookingStatus, BookingSource } from '@prisma/client';
+import type { BookingSource } from '@prisma/client';
 
 const doctorSelect = {
   id: true, nameEn: true, nameAr: true, specialtyEn: true, specialtyAr: true,
@@ -61,7 +61,7 @@ export async function PUT(
         ...(body.service     !== undefined && { service: body.service }),
         ...(body.date        !== undefined && { date: body.date }),
         ...(body.time        !== undefined && { time: body.time }),
-        ...(body.status      !== undefined && { status: toDbStatus(body.status) as BookingStatus }),
+        ...(body.status      !== undefined && { status: toDbStatus(body.status) }),
         ...(body.notes       !== undefined && { notes: body.notes }),
         ...(body.source      !== undefined && { source: body.source as BookingSource }),
         ...(body.reminderSent !== undefined && { reminderSent: body.reminderSent }),

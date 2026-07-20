@@ -1,4 +1,18 @@
 import { NextResponse } from 'next/server';
+import { BookingStatus } from '@prisma/client';
+
+const STATUS_TO_DB: Record<string, BookingStatus | undefined> = {
+  'no-show': BookingStatus.no_show,
+  no_show: BookingStatus.no_show,
+  pending: BookingStatus.pending,
+  confirmed: BookingStatus.confirmed,
+  completed: BookingStatus.completed,
+  cancelled: BookingStatus.cancelled,
+};
+
+const STATUS_FROM_DB: Record<string, string> = {
+  no_show: 'no-show',
+};
 
 /**
  * Normalizes a JSON value recursively:
@@ -11,8 +25,8 @@ export function normalizeBookingStatus<T>(data: T): T {
   if (data !== null && typeof data === 'object') {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
-      if (k === 'status' && v === 'no_show') {
-        out[k] = 'no-show';
+      if (k === 'status' && typeof v === 'string' && STATUS_FROM_DB[v]) {
+        out[k] = STATUS_FROM_DB[v];
       } else {
         out[k] = normalizeBookingStatus(v);
       }
@@ -29,7 +43,6 @@ export function normalizeBookingStatus<T>(data: T): T {
 export function apiResponse<T>(data: T, init?: ResponseInit): NextResponse {
   const normalized = normalizeBookingStatus(data);
   const res = NextResponse.json(normalized, init);
-  // Short cache for read-heavy list endpoints
   if (!init?.status || init.status < 300) {
     res.headers.set('Cache-Control', 'private, no-cache');
   }
@@ -37,9 +50,9 @@ export function apiResponse<T>(data: T, init?: ResponseInit): NextResponse {
 }
 
 /**
- * Converts "no-show" from the frontend into "no_show" for Prisma storage.
+ * Converts a frontend status string into a Prisma BookingStatus value.
+ * Returns the BookingStatus enum value, or undefined for unrecognized strings.
  */
-export function toDbStatus(status: string | undefined): string | undefined {
-  if (status === 'no-show') return 'no_show';
-  return status;
+export function toDbStatus(status: string | undefined): BookingStatus | undefined {
+  return status ? STATUS_TO_DB[status] : undefined;
 }

@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
     const completedCur = currentPeriod.filter(b => b.status === 'completed').length;
     const completedPrv = prevPeriod.filter(b => b.status === 'completed').length;
     const cancelledCur = currentPeriod.filter(b => b.status === 'cancelled').length;
-    const noShowCur = currentPeriod.filter(b => b.status === 'no-show' || b.status === 'no_show').length;
+    const noShowCur = currentPeriod.filter(b => b.status === 'no_show').length;
     const cancelRate = totalCur > 0 ? Math.round((cancelledCur / totalCur) * 100) : 0;
     const noShowRate = totalCur > 0 ? Math.round((noShowCur / totalCur) * 100) : 0;
     const waCur = currentPeriod.filter(b => b.source === 'whatsapp').length;
@@ -100,7 +100,7 @@ export async function GET(req: NextRequest) {
       doctorMap[docId].total++;
       if (b.status === 'completed') doctorMap[docId].completed++;
       if (b.status === 'cancelled') doctorMap[docId].cancelled++;
-      if (b.status === 'no-show' || b.status === 'no_show') doctorMap[docId].noShow++;
+      if (b.status === 'no_show') doctorMap[docId].noShow++;
     });
     const doctorPerformance = Object.entries(doctorMap)
       .map(([id, d]) => ({ id, ...d, rate: d.total ? Math.round((d.completed / d.total) * 100) : 0 }))

@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
 import { getAuthUser, requireRole } from '@/app/lib/auth';
 import { getAvailableSlots } from '@/app/lib/availability';
-import type { BookingStatus, BookingSource } from '@prisma/client';
+import type { BookingSource } from '@prisma/client';
 import { apiResponse, toDbStatus } from '@/app/lib/apiResponse';
 import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
 import { logger } from '@/app/lib/logger';
@@ -39,7 +39,10 @@ export async function GET(req: NextRequest) {
 
     const where: Record<string, unknown> = {};
     if (doctorId) where.doctorId = doctorId;
-    if (status)   where.status = status;
+    if (status) {
+      const dbStatus = toDbStatus(status);
+      if (dbStatus) where.status = dbStatus;
+    }
     if (date) {
       where.date = date;
     } else if (startDate || endDate) {
@@ -117,7 +120,7 @@ export async function POST(req: NextRequest) {
         service: body.service,
         date,
         time,
-        status: (toDbStatus(body.status) ?? 'pending') as BookingStatus,
+        status: toDbStatus(body.status) ?? 'pending',
         notes: body.notes ?? null,
         doctorId,
         source: (body.source ?? 'dashboard') as BookingSource,

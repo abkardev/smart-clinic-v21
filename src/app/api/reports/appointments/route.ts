@@ -5,6 +5,7 @@ import { prisma } from '@/app/lib/prisma';
 import { getAuthUser, requireRole } from '@/app/lib/auth';
 import { logger } from '@/app/lib/logger';
 import { generateAppointmentReportPdf, generateExcel, generateCsv, formatBookingForReport } from '@/app/lib/reports';
+import { toDbStatus } from '@/app/lib/apiResponse';
 
 export async function GET(req: NextRequest) {
   const { user, error } = await getAuthUser(req);
@@ -29,7 +30,10 @@ export async function GET(req: NextRequest) {
       where.date = dateFilter;
     }
 
-    if (status) where.status = status;
+    if (status) {
+      const dbStatus = toDbStatus(status);
+      if (dbStatus) where.status = dbStatus;
+    }
     if (doctorId) where.doctorId = doctorId;
 
     const bookings = await prisma.booking.findMany({
