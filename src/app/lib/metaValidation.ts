@@ -28,7 +28,8 @@ export function parseMetaError(body: string): MetaErrorInfo | null {
       details: err.error_data?.details,
       fbtraceId: err.fbtrace_id,
     };
-  } catch {
+  } catch (err) {
+    logger.warn('Failed to parse Meta error', { error: String(err) });
     return null;
   }
 }

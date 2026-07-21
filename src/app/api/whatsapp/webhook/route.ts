@@ -56,7 +56,8 @@ function verifySignature(rawBody: string, signatureHeader: string | null): boole
     const sigBuf = Buffer.from(signatureHeader);
     const expBuf = Buffer.from(expected);
     return sigBuf.length === expBuf.length && timingSafeEqual(sigBuf, expBuf);
-  } catch {
+  } catch (err) {
+    logger.warn('[Webhook] WhatsApp — signature verification failed', { error: String(err) });
     return false;
   }
 }
@@ -171,8 +172,19 @@ export async function POST(req: NextRequest) {
   const webhookId = generateWebhookId();
 
   const rawBody = await req.text().catch(() => '');
-  let body: any = null;
-  try { body = JSON.parse(rawBody); } catch { /* invalid JSON */ }
+  interface WhatsAppMessage {
+    from?: string; id?: string; type?: string;
+    wamid?: { id?: string };
+    text?: { body?: string };
+    interactive?: { list_reply?: { id?: string }; button_reply?: { id?: string } };
+  }
+  interface WhatsAppEntry {
+    id?: string;
+    changes?: Array<{ field?: string; value?: { metadata?: Record<string, unknown>; messages?: WhatsAppMessage[] } }>;
+  }
+
+  let body: { entry?: WhatsAppEntry[] } | null = null;
+  try { body = JSON.parse(rawBody); } catch (err) { logger.warn('[Webhook] WhatsApp — invalid JSON body', { error: String(err), rawBodySize: rawBody.length }); }
 
   if (!verifySignature(rawBody, req.headers.get('X-Hub-Signature-256'))) {
     logger.warn('WhatsApp webhook — invalid signature', { webhookId });
@@ -204,8 +216,8 @@ export async function POST(req: NextRequest) {
 
     for (const message of messages) {
       const msgStart = Date.now();
-      const phone = message.from as string;
-      const messageId = (message.id || message.wamid?.id || '') as string;
+      const phone = message.from ?? '';
+      const messageId = message.id || message.wamid?.id || '';
 
       const userInput: string =
         message.type === 'text' ? (message.text?.body ?? '').trim() :

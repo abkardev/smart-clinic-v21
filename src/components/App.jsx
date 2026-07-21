@@ -9,16 +9,16 @@ import Layout from './Layout.jsx';
 import LoginPage from './auth/LoginPage.jsx';
 import { RegisterPage, ForgotPasswordPage, ResetPasswordPage } from './auth/AuthPages.jsx';
 
-const DashboardPage   = lazy(() => import('../pages/DashboardPage.jsx'));
-const BookingsPage    = lazy(() => import('../pages/BookingsPage.jsx'));
-const DoctorsPage     = lazy(() => import('../pages/DoctorsPage.jsx'));
-const CalendarPage    = lazy(() => import('../pages/CalendarPage.jsx'));
-const SlotManagerPage = lazy(() => import('../pages/SlotManagerPage.jsx'));
-const AnalyticsPage   = lazy(() => import('../pages/AnalyticsPage.jsx'));
-const UsersPage       = lazy(() => import('../pages/UsersPage.jsx'));
-const AuditLogsPage   = lazy(() => import('../pages/AuditLogsPage.jsx'));
-const OffersPage      = lazy(() => import('../pages/OffersPage.jsx'));
-const HolidaysPage    = lazy(() => import('../pages/HolidaysPage.jsx'));
+const DashboardPage   = lazy(() => import('../pages_/DashboardPage.jsx'));
+const BookingsPage    = lazy(() => import('../pages_/BookingsPage.jsx'));
+const DoctorsPage     = lazy(() => import('../pages_/DoctorsPage.jsx'));
+const CalendarPage    = lazy(() => import('../pages_/CalendarPage.jsx'));
+const SlotManagerPage = lazy(() => import('../pages_/SlotManagerPage.jsx'));
+const AnalyticsPage   = lazy(() => import('../pages_/AnalyticsPage.jsx'));
+const UsersPage       = lazy(() => import('../pages_/UsersPage.jsx'));
+const AuditLogsPage   = lazy(() => import('../pages_/AuditLogsPage.jsx'));
+const OffersPage      = lazy(() => import('../pages_/OffersPage.jsx'));
+const HolidaysPage    = lazy(() => import('../pages_/HolidaysPage.jsx'));
 
 function AuthLoader() {
   return (

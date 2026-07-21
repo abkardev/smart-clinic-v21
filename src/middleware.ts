@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logger } from '@/app/lib/logger';
 
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
@@ -25,7 +26,8 @@ function isValidJwtFormat(token: string): boolean {
   if (parts.length !== 3) return false;
   try {
     return parts.every(p => /^[A-Za-z0-9_-]+$/.test(p));
-  } catch {
+  } catch (err) {
+    logger.warn('Invalid JWT format check failed', { error: String(err) });
     return false;
   }
 }

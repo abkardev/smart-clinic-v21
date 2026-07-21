@@ -138,7 +138,7 @@ export async function POST(req: NextRequest) {
           data: { ...calResult, calendarSynced: true },
         });
       }
-    } catch { /* calendar sync is non-fatal */ }
+    } catch (err) { logger.warn('Calendar sync failed for new booking', { error: String(err), bookingId: booking.id }); }
 
     const { doctor: doc, ...rest } = booking;
     metrics.bookingsCreated.inc();

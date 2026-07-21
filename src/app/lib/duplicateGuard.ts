@@ -60,7 +60,7 @@ async function cleanupExpired() {
     if (result.count > 0) {
       logger.debug('[Dedup] Cleaned up expired messages', { count: result.count });
     }
-  } catch {
-    // non-fatal
+  } catch (err) {
+    logger.warn('Failed to cleanup expired messages', { error: String(err) });
   }
 }

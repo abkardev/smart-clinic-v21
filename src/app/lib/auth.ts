@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from './prisma';
+import { logger } from './logger';
 import { required } from './env';
 
 const JWT_SECRET = required('JWT_SECRET');
@@ -87,7 +88,8 @@ export async function getAuthUser(req: NextRequest) {
     }
 
     return { user, error: null };
-  } catch {
+  } catch (err) {
+    logger.error('Failed to verify token', { error: String(err) });
     return {
       user: null,
       error: NextResponse.json({ message: 'Invalid or expired token' }, { status: 401 }),

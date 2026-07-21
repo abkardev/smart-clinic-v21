@@ -1,10 +1,10 @@
 export const dynamic = 'force-dynamic';
 
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
 import { getAuthUser, requireRole } from '@/app/lib/auth';
 import { logger } from '@/app/lib/logger';
-import { generateExcel, generateCsv, formatDoctorReport } from '@/app/lib/reports';
+import { generateExcel, generateCsv } from '@/app/lib/reports';
 
 export async function GET(req: NextRequest) {
   const { user, error } = await getAuthUser(req);
@@ -15,11 +15,63 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const format = searchParams.get('format') || 'pdf';
+    const startDateParam = searchParams.get('startDate');
+    const endDateParam = searchParams.get('endDate');
+
+    const now = new Date();
+    const defaultEnd = now.toISOString().split('T')[0];
+    const defaultStart = new Date(now);
+    defaultStart.setDate(now.getDate() - 30);
+    const defaultStartStr = defaultStart.toISOString().split('T')[0];
+
+    const startDate = startDateParam || defaultStartStr;
+    const endDate = endDateParam || defaultEnd;
+
+    if (startDate > endDate) {
+      return NextResponse.json({ message: 'startDate must be before endDate' }, { status: 400 });
+    }
+
+    const daysDiff = Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000);
+    if (daysDiff > 365) {
+      return NextResponse.json({ message: 'Date range must not exceed 365 days' }, { status: 400 });
+    }
 
     const doctors = await prisma.doctor.findMany({ where: { isActive: true } });
-    const bookings = await prisma.booking.findMany();
 
-    const rows = formatDoctorReport(doctors, bookings);
+    const stats = await prisma.booking.groupBy({
+      by: ['doctorId', 'status'],
+      _count: { id: true },
+      where: {
+        date: { gte: startDate, lte: endDate },
+        doctorId: { in: doctors.map(d => d.id) },
+      },
+    });
+
+    const doctorStats: Record<string, { total: number; completed: number; cancelled: number; noShow: number }> = {};
+    doctors.forEach(d => {
+      doctorStats[d.id] = { total: 0, completed: 0, cancelled: 0, noShow: 0 };
+    });
+    stats.forEach(s => {
+      if (!doctorStats[s.doctorId]) return;
+      doctorStats[s.doctorId].total += s._count.id;
+      if (s.status === 'completed') doctorStats[s.doctorId].completed += s._count.id;
+      if (s.status === 'cancelled') doctorStats[s.doctorId].cancelled += s._count.id;
+      if (s.status === 'no_show') doctorStats[s.doctorId].noShow += s._count.id;
+    });
+
+    const rows = doctors.map(d => {
+      const st = doctorStats[d.id] || { total: 0, completed: 0, cancelled: 0, noShow: 0 };
+      return {
+        id: d.id,
+        doctorNameEn: d.nameEn,
+        doctorNameAr: d.nameAr,
+        totalBookings: st.total,
+        completed: st.completed,
+        cancelled: st.cancelled,
+        noShow: st.noShow,
+        successRate: st.total > 0 ? Math.round((st.completed / st.total) * 100) : 0,
+      };
+    }).sort((a, b) => b.totalBookings - a.totalBookings);
 
     const columns = [
       { header: 'ID', key: 'id' },
@@ -125,6 +177,6 @@ export async function GET(req: NextRequest) {
     });
   } catch (err) {
     logger.error('Failed to generate doctors report', { error: String(err) });
-    return new Response(JSON.stringify({ message: 'Server error' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }

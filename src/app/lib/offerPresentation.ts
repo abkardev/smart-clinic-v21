@@ -33,7 +33,8 @@ export function isValidMediaUrl(url: string | null | undefined): boolean {
   try {
     const parsed = new URL(url);
     return parsed.protocol === 'https:' && SUPPORTED_IMAGE_EXT.test(parsed.pathname);
-  } catch {
+  } catch (err) {
+    logger.warn('Invalid media URL', { error: String(err), url });
     return false;
   }
 }

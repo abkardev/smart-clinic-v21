@@ -74,7 +74,7 @@ export async function PUT(
         const { updateCalendarEvent } = await import('@/app/lib/googleCalendar');
         const doctor = await prisma.doctor.findUnique({ where: { id: booking.doctorId } });
         if (doctor) await updateCalendarEvent(booking, doctor);
-      } catch { /* non-fatal */ }
+      } catch (err) { logger.warn('Failed to update calendar event', { error: String(err), bookingId: params.id }); }
     }
 
     const changes: Record<string, { before: unknown; after: unknown }> = {};
@@ -120,7 +120,7 @@ export async function DELETE(
       try {
         const { deleteCalendarEvent } = await import('@/app/lib/googleCalendar');
         await deleteCalendarEvent(booking.doctor.calendarId, booking.calendarEventId);
-      } catch { /* non-fatal */ }
+      } catch (err) { logger.warn('Failed to delete calendar event', { error: String(err), bookingId: params.id }); }
     }
 
     await prisma.booking.delete({ where: { id: params.id } });

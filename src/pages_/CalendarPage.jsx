@@ -192,6 +192,13 @@ export default function CalendarPage() {
     return { daysOfWeek: [0, 1, 2, 3, 4], startTime: '09:00', endTime: '17:00' };
   }, [selectedDoctorObj]);
 
+  const slotDurationStr = useMemo(() => {
+    const minutes = selectedDoctorObj?.slotDuration || 30;
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`;
+  }, [selectedDoctorObj]);
+
   const loadEvents = useCallback(async (start, end) => {
     if (!start || !end) return;
     setLoading(true);
@@ -455,7 +462,7 @@ export default function CalendarPage() {
               allDaySlot={true}
               height="auto"
               contentHeight={contentHeight}
-              slotDuration="00:30:00"
+              slotDuration={slotDurationStr}
               nowIndicator={true}
               businessHours={businessHours}
             />

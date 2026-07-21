@@ -107,7 +107,8 @@ function verifySignature(rawBody: string, signatureHeader: string | null): boole
     const sigBuf = Buffer.from(signatureHeader);
     const expBuf = Buffer.from(expected);
     return sigBuf.length === expBuf.length && timingSafeEqual(sigBuf, expBuf);
-  } catch {
+  } catch (err) {
+    logger.warn('[Webhook] Instagram — signature verification failed', { error: String(err) });
     return false;
   }
 }
@@ -206,9 +207,24 @@ export async function POST(req: NextRequest) {
     signature256: req.headers.get('x-hub-signature-256'),
     signature1: req.headers.get('x-hub-signature'),
   });
-  let body: any = null;
-  try { body = JSON.parse(rawBody); } catch {
-    logger.warn('[Webhook] Instagram — invalid JSON body, returning EVENT_RECEIVED', { webhookId, rawBodySize: rawBody.length });
+  interface InstagramEvent {
+    sender?: { id?: string };
+    message?: { mid?: string; text?: string; is_echo?: boolean; quick_reply?: { payload?: string } };
+    postback?: { payload?: string };
+  }
+  interface InstagramChange {
+    field?: string;
+    value?: InstagramEvent;
+  }
+  interface InstagramEntry {
+    id?: string;
+    messaging?: InstagramEvent[];
+    changes?: InstagramChange[];
+  }
+
+  let body: { entry?: InstagramEntry[] } | null = null;
+  try { body = JSON.parse(rawBody); } catch (err) {
+    logger.warn('[Webhook] Instagram — invalid JSON body, returning EVENT_RECEIVED', { error: String(err), webhookId, rawBodySize: rawBody.length });
   }
 
   if (!verifySignature(rawBody, req.headers.get('X-Hub-Signature-256'))) {
@@ -218,13 +234,13 @@ export async function POST(req: NextRequest) {
 
   try {
     const entry     = body?.entry?.[0];
-    let messaging = entry?.messaging ?? [];
+    let messaging: InstagramEvent[] = entry?.messaging ?? [];
 
     // Instagram Graph API format: entry[0].changes[0].value { sender, message, ... }
     if (!messaging.length && entry?.changes?.length) {
       messaging = entry.changes
-        .filter((c: { field?: string; value?: { sender?: { id?: string } } }) => c.value?.sender?.id)
-        .map((c: { value?: unknown }) => c.value);
+        .filter(c => c.value?.sender?.id)
+        .map(c => c.value!);
       if (messaging.length) {
         logger.info('[Webhook] Graph API format detected', {
           webhookId, changeCount: entry.changes.length, messageCount: messaging.length,
@@ -252,17 +268,17 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      const senderId = event.sender?.id as string | undefined;
+      const senderId = event.sender?.id;
       if (!senderId) {
         logger.debug('[Webhook] Instagram — no sender ID, skipped', { webhookId });
         continue;
       }
 
       const sessionId = `ig_${senderId}`;
-      const messageId = event.message?.mid as string | undefined;
+      const messageId = event.message?.mid;
 
-      const quickReplyPayload = event.message?.quick_reply?.payload as string | undefined;
-      const postbackPayload   = event.postback?.payload as string | undefined;
+      const quickReplyPayload = event.message?.quick_reply?.payload;
+      const postbackPayload   = event.postback?.payload;
       const typedText         = (event.message?.text ?? '').trim();
 
       const userInput = quickReplyPayload || postbackPayload || typedText;

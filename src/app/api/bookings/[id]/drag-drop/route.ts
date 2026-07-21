@@ -7,6 +7,7 @@ import { getAuthUser, requireRole } from '@/app/lib/auth';
 import { apiResponse, toDbStatus } from '@/app/lib/apiResponse';
 import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
 import { getAvailableSlots } from '@/app/lib/availability';
+import { logger } from '@/app/lib/logger';
 
 // PATCH /api/bookings/[id]/drag-drop
 export async function PATCH(
@@ -40,7 +41,7 @@ export async function PATCH(
     try {
       const { updateCalendarEvent } = await import('@/app/lib/googleCalendar');
       await updateCalendarEvent(updated, booking.doctor);
-    } catch { /* non-fatal */ }
+    } catch (err) { logger.warn('Failed to update calendar event after drag', { error: String(err), bookingId: params.id }); }
 
     await logAudit(AuditAction.BOOKING_DRAGGED, 'Booking', params.id,
       { oldDate: booking.date, oldTime: booking.time, newDate: date, newTime: time },

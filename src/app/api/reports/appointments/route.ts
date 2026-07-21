@@ -1,6 +1,6 @@
 export const dynamic = 'force-dynamic';
 
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
 import { getAuthUser, requireRole } from '@/app/lib/auth';
 import { logger } from '@/app/lib/logger';
@@ -16,19 +16,31 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const format = searchParams.get('format') || 'pdf';
-    const startDate = searchParams.get('startDate');
-    const endDate = searchParams.get('endDate');
+    const startDateParam = searchParams.get('startDate');
+    const endDateParam = searchParams.get('endDate');
     const status = searchParams.get('status');
     const doctorId = searchParams.get('doctorId');
 
-    const where: Record<string, unknown> = {};
+    const now = new Date();
+    const defaultEnd = now.toISOString().split('T')[0];
+    const defaultStart = new Date(now);
+    defaultStart.setDate(now.getDate() - 30);
+    const defaultStartStr = defaultStart.toISOString().split('T')[0];
 
-    if (startDate || endDate) {
-      const dateFilter: Record<string, string> = {};
-      if (startDate) dateFilter.gte = startDate;
-      if (endDate) dateFilter.lte = endDate;
-      where.date = dateFilter;
+    const startDate = startDateParam || defaultStartStr;
+    const endDate = endDateParam || defaultEnd;
+
+    if (startDate > endDate) {
+      return NextResponse.json({ message: 'startDate must be before endDate' }, { status: 400 });
     }
+
+    const daysDiff = Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000);
+    if (daysDiff > 365) {
+      return NextResponse.json({ message: 'Date range must not exceed 365 days' }, { status: 400 });
+    }
+
+    const where: Record<string, unknown> = {};
+    where.date = { gte: startDate, lte: endDate };
 
     if (status) {
       const dbStatus = toDbStatus(status);
@@ -92,6 +104,6 @@ export async function GET(req: NextRequest) {
     });
   } catch (err) {
     logger.error('Failed to generate appointments report', { error: String(err) });
-    return new Response(JSON.stringify({ message: 'Server error' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }

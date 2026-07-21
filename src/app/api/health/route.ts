@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
+import { logger } from '@/app/lib/logger';
 import pkg from '../../../../package.json';
 
 const START_TIME = Date.now();
@@ -23,7 +24,8 @@ async function checkDatabase(): Promise<CheckResult> {
   try {
     await prisma.$queryRaw`SELECT 1`;
     return { status: 'healthy', latencyMs: Date.now() - start };
-  } catch {
+  } catch (err) {
+    logger.error('Health check — database query failed', { error: String(err) });
     return { status: 'unhealthy', latencyMs: Date.now() - start, message: 'Database unavailable' };
   }
 }
@@ -141,7 +143,8 @@ export async function GET(req: NextRequest) {
 
     const statusCode = overall === 'unhealthy' ? 503 : overall === 'degraded' ? 200 : 200;
     return NextResponse.json(response, { status: statusCode });
-  } catch {
+  } catch (err) {
+    logger.error('Health check — unexpected error', { error: String(err) });
     return NextResponse.json(
       {
         status: 'unhealthy',

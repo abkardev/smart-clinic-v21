@@ -1,13 +1,6 @@
 import { prisma } from './prisma';
+import { logger } from './logger';
 import type { Doctor } from '@prisma/client';
-
-export const SERVICES = [
-  'General Consultation',
-  'Follow-up',
-  'Specialist Visit',
-  'Lab Results Review',
-  'Prescription Renewal',
-];
 
 function toMinutes(t: string): number {
   const [h, m] = t.split(':').map(Number);
@@ -92,7 +85,8 @@ async function getGoogleBusySlots(calendarId: string, date: string): Promise<{ s
       requestBody: { timeMin, timeMax, items: [{ id: calendarId }] },
     });
     return (response.data.calendars?.[calendarId]?.busy ?? []) as { start: string; end: string }[];
-  } catch {
+  } catch (err) {
+    logger.warn('Failed to fetch Google busy slots', { error: String(err), calendarId });
     return [];
   }
 }
