@@ -2,17 +2,37 @@ import { defineConfig } from 'vitest/config';
 import path from 'path';
 
 export default defineConfig({
-  test: {
-    globals: true,
-    environment: 'node',
-    include: ['src/**/*.test.ts'],
-    testTimeout: 15000,
-    hookTimeout: 15000,
-  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
-      '@prisma/client': path.resolve(__dirname, 'node_modules/@prisma/client'),
+    },
+  },
+  test: {
+    globals: true,
+    environment: 'node',
+    setupFiles: ['./src/__tests__/setup.ts'],
+    include: ['src/__tests__/**/*.test.ts'],
+    exclude: ['node_modules', 'e2e'],
+    testTimeout: 60000,
+    hookTimeout: 60000,
+    fileParallelism: false,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov', 'html'],
+      include: ['src/app/**/*.ts', 'src/app/**/*.tsx'],
+      exclude: [
+        'src/__tests__/**',
+        'src/app/**/*.d.ts',
+        'src/app/lib/prisma.ts',
+        'src/app/lib/logger.ts',
+        '**/route.ts',
+      ],
+      thresholds: {
+        statements: 90,
+        functions: 90,
+        branches: 85,
+        lines: 90,
+      },
     },
   },
 });

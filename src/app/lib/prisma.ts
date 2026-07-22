@@ -60,3 +60,6 @@ if (process.env.NODE_ENV !== 'production') {
     );
   }
 }
+
+// ─── Startup configuration validation ─────────────────────────────────────────
+import('./config').then(({ validateConfigOrThrow }) => validateConfigOrThrow());

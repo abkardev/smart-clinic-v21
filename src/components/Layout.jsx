@@ -4,7 +4,7 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { Box, Drawer, AppBar, Toolbar, List, ListItem, ListItemButton, ListItemIcon, ListItemText, IconButton, Avatar, Divider, Menu, MenuItem, Typography } from '@mui/material';
 import { useLang, useAuth } from '../context/AppContext.jsx';
 import LangToggle from './LangToggle.jsx';
-import { BarChartRoundedIcon, BeachAccessRoundedIcon, BlockRoundedIcon, CalendarMonthRoundedIcon, DashboardRoundedIcon, EventNoteRoundedIcon, HistoryRoundedIcon, KeyboardArrowDownRoundedIcon, LocalHospitalRoundedIcon, LocalOfferRoundedIcon, LogoutRoundedIcon, ManageAccountsRoundedIcon, MenuRoundedIcon, PeopleRoundedIcon } from '../components/icons';
+import { BarChartRoundedIcon, BeachAccessRoundedIcon, BlockRoundedIcon, CalendarMonthRoundedIcon, CloudSyncRoundedIcon, DashboardRoundedIcon, EventNoteRoundedIcon, HistoryRoundedIcon, KeyboardArrowDownRoundedIcon, LocalHospitalRoundedIcon, LocalOfferRoundedIcon, LogoutRoundedIcon, ManageAccountsRoundedIcon, MenuRoundedIcon, PeopleRoundedIcon } from '../components/icons';
 
 const DW = 260;
 const ROLE_BADGE = { superadmin:{ bg:'#FEF3C7', color:'#92400E', label:'★ Super Admin' }, admin:{ bg:'#EFF6FF', color:'#1D4ED8', label:'◆ Admin' }, doctor:{ bg:'#F0FDF4', color:'#166534', label:'✦ Doctor' } };
@@ -24,6 +24,7 @@ export default function Layout() {
     { label:t('calendar'),    path:'/calendar',    icon:<CalendarMonthRoundedIcon/> },
     { label:t('slotManager'), path:'/slots',       icon:<BlockRoundedIcon/> },
     ...(user?.role==='superadmin'?[
+      { label:isRTL?'لوحة التقويم':'Calendar Admin',  path:'/calendar-admin',  icon:<CloudSyncRoundedIcon/> },
       { label:isRTL?'العروض':'Offers',  path:'/offers',  icon:<LocalOfferRoundedIcon/> },
       { label:isRTL?'العطلات':'Holidays',path:'/holidays',icon:<BeachAccessRoundedIcon/> },
       { label:t('users'),     path:'/users',       icon:<ManageAccountsRoundedIcon/> },

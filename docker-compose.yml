@@ -1,0 +1,62 @@
+version: "3.9"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NODE_VERSION: 22-alpine
+    image: smartclinic:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL}
+      - JWT_SECRET=${JWT_SECRET}
+      - WHATSAPP_TOKEN=${WHATSAPP_TOKEN}
+      - WHATSAPP_PHONE_ID=${WHATSAPP_PHONE_ID}
+      - WHATSAPP_VERIFY_TOKEN=${WHATSAPP_VERIFY_TOKEN}
+      - WHATSAPP_APP_SECRET=${WHATSAPP_APP_SECRET}
+      - INSTAGRAM_TOKEN=${INSTAGRAM_TOKEN}
+      - INSTAGRAM_VERIFY_TOKEN=${INSTAGRAM_VERIFY_TOKEN}
+      - INSTAGRAM_APP_SECRET=${INSTAGRAM_APP_SECRET}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_REFRESH_TOKEN=${GOOGLE_REFRESH_TOKEN}
+      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}
+      - BLOB_READ_WRITE_TOKEN=${BLOB_READ_WRITE_TOKEN}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - CLINIC_TIMEZONE=${CLINIC_TIMEZONE:-Asia/Riyadh}
+      - BOOKING_BUFFER_MINUTES=${BOOKING_BUFFER_MINUTES:-0}
+      - MINIMUM_ADVANCE_BOOKING_HOURS=${MINIMUM_ADVANCE_BOOKING_HOURS:-3}
+      - NEXT_PUBLIC_SENTRY_DSN=${NEXT_PUBLIC_SENTRY_DSN:-}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  # Calendar retry scheduler — runs every minute
+  cron:
+    image: alpine:3.19
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      - CALENDAR_INTERNAL_SECRET=${CALENDAR_INTERNAL_SECRET}
+    command: >
+      sh -c "
+        apk add --no-cache curl &&
+        echo '*/1 * * * * /usr/bin/curl -s -o /dev/null -w \"%{http_code}\" -X POST http://app:3000/api/internal/calendar/retry -H \"Authorization: Bearer $${CALENDAR_INTERNAL_SECRET}\" -H \"Content-Type: application/json\" --max-time 30' > /etc/crontabs/root &&
+        crond -f -l 2
+      "

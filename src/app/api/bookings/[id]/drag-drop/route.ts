@@ -39,9 +39,9 @@ export async function PATCH(
     });
 
     try {
-      const { updateCalendarEvent } = await import('@/app/lib/googleCalendar');
-      await updateCalendarEvent(updated, booking.doctor);
-    } catch (err) { logger.warn('Failed to update calendar event after drag', { error: String(err), bookingId: params.id }); }
+      const { syncBooking } = await import('@/app/lib/googleCalendar');
+      await syncBooking(updated, booking.doctor, { auditOpts: auditOptsFromRequest(req, user!) });
+    } catch (err) { logger.warn('Failed to sync calendar event after drag', { error: String(err), bookingId: params.id }); }
 
     await logAudit(AuditAction.BOOKING_DRAGGED, 'Booking', params.id,
       { oldDate: booking.date, oldTime: booking.time, newDate: date, newTime: time },

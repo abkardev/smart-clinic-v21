@@ -25,7 +25,7 @@ export const getDoctors      = () => api.get('/doctors');
 export const createDoctor    = (data) => api.post('/doctors', data);
 export const updateDoctor    = (id, data) => api.put(`/doctors/${id}`, data);
 export const deleteDoctor    = (id) => api.delete(`/doctors/${id}`);
-export const syncFromGoogle  = () => api.post('/doctors/sync-google');
+export const syncFromGoogle  = (doctorId) => api.post('/doctors/sync-google', { doctorId });
 export const syncAllDoctors  = () => api.post('/doctors/sync-all');
 
 export const getBookings     = (params) => api.get('/bookings', { params });
@@ -60,3 +60,32 @@ export const getAnalyticsOverview = (params) => api.get('/analytics/overview', {
 
 export const exportAppointmentsReport = (params) => api.get('/reports/appointments', { params, responseType: 'blob' });
 export const exportDoctorsReport = (params) => api.get('/reports/doctors', { params, responseType: 'blob' });
+
+// ─── Calendar Administration API ──────────────────────────────────────────────
+export const getCalendarOverview = () => api.get('/calendar/overview');
+export const getCalendarStatus = () => api.get('/calendar/status');
+export const getCalendarStatistics = () => api.get('/calendar/statistics');
+export const getCalendarActivity = (params) => api.get('/calendar/activity', { params });
+export const verifyBooking = (bookingId) => api.get('/calendar/verify', { params: { bookingId } });
+export const postVerifyBooking = (data) => api.post('/calendar/verify', data);
+export const resyncBooking = (data) => api.post('/calendar/resync-booking', data);
+export const recreateEvent = (data) => api.post('/calendar/recreate-event', data);
+export const getCalendarConflicts = (params) => api.get('/calendar/conflicts', { params });
+export const getCalendarDiagnostics = () => api.get('/calendar/diagnostics');
+export const getCalendarObservability = () => api.get('/calendar/observability');
+export const getCalendarConfig = () => api.get('/calendar/config');
+export const updateCalendarConfig = (data) => api.patch('/calendar/config', data);
+export const exportCalendarData = (params) => api.get('/calendar/export', { params, responseType: 'blob' });
+export const runCalendarCleanup = (data) => api.post('/calendar/cleanup', data);
+export const getCalendarCleanup = (params) => api.get('/calendar/cleanup', { params });
+export const resyncDoctor = (data) => api.post('/calendar/resync-doctor', data);
+export const fullResync = () => api.post('/calendar/full-resync');
+export const renewChannels = () => api.post('/google/channels');
+export const getChannels = () => api.get('/google/channels');
+
+// ─── Scheduling API ───────────────────────────────────────────────────────────
+export const getSchedulingAnalytics = (params) => api.get('/scheduling/analytics', { params });
+export const getSmartAvailability = (params) => api.get('/scheduling/availability', { params });
+export const getSchedulingForecast = (params) => api.get('/scheduling/forecast', { params });
+export const getSchedulingOptimize = (params) => api.get('/scheduling/optimize', { params });
+export const autoReschedule = (data) => api.post('/scheduling/reschedule', data);

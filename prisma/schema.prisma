@@ -153,15 +153,17 @@ model Booking {
   date            String        // YYYY-MM-DD (kept as string to match original)
   time            String        // HH:MM
   status          BookingStatus @default(pending)
+  priority        String        @default("regular") // emergency, vip, regular, follow_up
   notes           String?
 
   doctorId        String
   doctor          Doctor        @relation("BookingDoctor", fields: [doctorId], references: [id])
 
   // Google Calendar sync
-  calendarEventId String?
-  calendarLink    String?
-  calendarSynced  Boolean       @default(false)
+  calendarEventId     String?
+  calendarLink        String?
+  calendarSynced      Boolean       @default(false)
+  calendarLastSyncedAt DateTime?
 
   // WhatsApp
   reminderSent    Boolean       @default(false)
@@ -200,13 +202,19 @@ model BlockedSlot {
   syncedToGoogle Boolean @default(false)
   googleEventId String?
 
+  blockingSource  String  @default("manual") // manual | google_import | recurring_expansion
+
   blockedById   String?
   blockedBy     User?    @relation("BlockedSlotBlockedBy", fields: [blockedById], references: [id])
+
+  recurringSlotId String?
+  recurringSlot   RecurringBlockedSlot? @relation(fields: [recurringSlotId], references: [id])
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   @@index([doctorId, date])
+  @@index([recurringSlotId])
   @@map("blocked_slots")
 }
 
@@ -387,4 +395,210 @@ model IdempotencyLock {
 
   @@index([expiresAt])
   @@map("idempotency_locks")
+}
+
+// ─── Calendar Sync Retry Queue ──────────────────────────────────────────────────
+enum CalendarSyncStatus {
+  pending
+  processing
+  completed
+  failed
+}
+
+model CalendarSyncJob {
+  id          String             @id @default(cuid())
+  bookingId   String
+  doctorId    String
+  attempt     Int                @default(0)
+  status      CalendarSyncStatus @default(pending)
+  error       String?
+  nextRetryAt DateTime?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@index([status, nextRetryAt])
+  @@index([bookingId])
+  @@map("calendar_sync_jobs")
+}
+
+// ─── Calendar Channel (push notification watch) ─────────────────────────────────
+enum CalendarChannelStatus {
+  active
+  expiring
+  stopped
+  error
+}
+
+model CalendarChannel {
+  id            String                 @id @default(cuid())
+  doctorId      String
+  calendarId    String
+  channelId     String                 @unique
+  resourceId    String                 @unique
+  expiration    DateTime
+  status        CalendarChannelStatus  @default(active)
+  lastRenewedAt DateTime               @default(now())
+  expiresAt     DateTime
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  @@index([doctorId])
+  @@index([expiration])
+  @@index([status])
+  @@map("calendar_channels")
+}
+
+// ─── Calendar Sync State (syncToken per doctor) ─────────────────────────────────
+model CalendarSyncState {
+  id            String   @id @default(cuid())
+  doctorId      String   @unique
+  calendarId    String
+  syncToken     String?
+  fullSyncAt    DateTime @default(now())
+  lastEventId   String?
+  lastSyncAt    DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("calendar_sync_states")
+}
+
+// ─── Doctor Calendar Token (per-doctor OAuth) ───────────────────────────────────
+model DoctorCalendarToken {
+  id            String   @id @default(cuid())
+  doctorId      String   @unique
+  calendarId    String?
+  accessToken   String?
+  refreshToken  String?
+  tokenExpiresAt DateTime?
+  scope         String?
+  connectedAt   DateTime?
+  disconnectedAt DateTime?
+  status        String   @default("active") // active | disconnected | revoked
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("doctor_calendar_tokens")
+}
+
+// ─── Recurring Blocked Slot (RRULE support) ─────────────────────────────────────
+enum RecurringSlotType {
+  out_of_office
+  vacation
+  meeting
+  personal
+  conference
+  other
+}
+
+model RecurringBlockedSlot {
+  id            String            @id @default(cuid())
+  doctorId      String
+  title         String?
+  rrule         String            // RFC 5545 RRULE (e.g. "FREQ=WEEKLY;BYDAY=MO,WE;COUNT=10")
+  slotType      RecurringSlotType @default(other)
+  startTime     String            // HH:MM
+  endTime       String            // HH:MM
+  isWholeDay    Boolean           @default(false)
+  reason        String            @default("")
+  googleEventId String?
+  syncedToGoogle Boolean          @default(false)
+  activeFrom    DateTime?
+  activeUntil   DateTime?
+  blockedSlots  BlockedSlot[]
+
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([doctorId])
+  @@map("recurring_blocked_slots")
+}
+
+// ─── Calendar Retry Lock (distributed, singleton row) ───────────────────────────
+model CalendarRetryLock {
+  id        String   @id @default("singleton")
+  lockedAt  DateTime @default(now())
+  expiresAt DateTime
+  instance  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("calendar_retry_lock")
+}
+
+// ─── Processed Notifications (distributed dedup cache) ──────────────────────────
+model ProcessedNotification {
+  id             String   @id @default(cuid())
+  notificationKey String  @unique // channelId::resourceId::messageNumber
+  channelId      String
+  resourceId     String
+  messageNumber  Int
+  processedAt    DateTime @default(now())
+  expiresAt      DateTime
+
+  @@index([expiresAt])
+  @@index([processedAt])
+  @@map("processed_notifications")
+}
+
+// ─── Calendar Configuration (persisted settings, singleton) ────────────────────
+model CalendarConfig {
+  id    String @id @default("singleton")
+  config Json   @default("{}")
+
+  @@map("calendar_config")
+}
+
+// ─── Service Buffer Rules (configurable buffers per service/doctor) ────────────
+model ServiceBufferRule {
+  id           String   @id @default(cuid())
+  doctorId     String
+  service      String   // matches Booking.service
+  bufferBefore Int      @default(0) // minutes before appointment
+  bufferAfter  Int      @default(0) // minutes after appointment
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([doctorId, service])
+  @@index([doctorId])
+  @@map("service_buffer_rules")
+}
+
+// ─── Waiting List ──────────────────────────────────────────────────────────────
+model WaitingListEntry {
+  id              String   @id @default(cuid())
+  name            String
+  phone           String
+  service         String
+  doctorId        String?
+  priority        Int      @default(0) // higher = more urgent
+  preferredDays   String[] @default([]) // MO,TU,WE,...
+  preferredTimes  String?  // "morning" | "afternoon" | "evening"
+  notes           String?
+  status          String   @default("waiting") // waiting, reserved, booked, expired, cancelled
+  expiresAt       DateTime?
+  reservedAt      DateTime?
+  bookedAt        DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status])
+  @@index([doctorId])
+  @@index([createdAt])
+  @@map("waiting_list_entries")
+}
+
+// ─── Appointment Team (multi-doctor appointments) ──────────────────────────────
+model AppointmentTeam {
+  id            String   @id @default(cuid())
+  bookingId     String
+  primaryDoctorId String
+  teamMembers   Json     @default("[]") // Array<{ doctorId, role }>
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([bookingId])
+  @@index([primaryDoctorId])
+  @@map("appointment_teams")
 }

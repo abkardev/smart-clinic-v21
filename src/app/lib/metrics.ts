@@ -86,7 +86,17 @@ export const metrics = {
   apiLatency: new Histogram(),
 
   // External API latencies
+  // Google Calendar
   googleCalendarLatency: new Histogram(),
+  googleCalendarRequestsTotal: new Counter(),
+  googleCalendarFailuresTotal: new Counter(),
+  googleCalendarSyncDuration: new Histogram(),
+  googleCalendarChannels: new Gauge(),
+  googleCalendarNotifications: new Counter(),
+  googleCalendarRetries: new Counter(),
+  googleCalendarQuotaRemaining: new Gauge(),
+  googleCalendarOAuthRefreshes: new Counter(),
+
   metaApiLatency: new Histogram(),
 
   // Retry

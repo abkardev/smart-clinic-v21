@@ -19,6 +19,7 @@ const UsersPage       = lazy(() => import('../pages_/UsersPage.jsx'));
 const AuditLogsPage   = lazy(() => import('../pages_/AuditLogsPage.jsx'));
 const OffersPage      = lazy(() => import('../pages_/OffersPage.jsx'));
 const HolidaysPage    = lazy(() => import('../pages_/HolidaysPage.jsx'));
+const CalendarAdminPage = lazy(() => import('../pages_/CalendarAdminPage.jsx'));
 
 function AuthLoader() {
   return (
@@ -136,6 +137,7 @@ function ThemedApp() {
             <Route path="holidays"   element={<RequireRole roles={['superadmin']}>{S(HolidaysPage)}</RequireRole>} />
             <Route path="users"      element={<RequireRole roles={['superadmin']}>{S(UsersPage)}</RequireRole>} />
             <Route path="audit-logs" element={<RequireRole roles={['superadmin']}>{S(AuditLogsPage)}</RequireRole>} />
+            <Route path="calendar-admin" element={<RequireRole roles={['superadmin']}>{S(CalendarAdminPage)}</RequireRole>} />
           </Route>
 
           <Route path="*" element={<Navigate to="/login" replace />} />

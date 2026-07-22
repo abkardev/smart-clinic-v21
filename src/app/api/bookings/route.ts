@@ -130,14 +130,8 @@ export async function POST(req: NextRequest) {
 
     // Attempt Google Calendar sync
     try {
-      const { createCalendarEvent } = await import('@/app/lib/googleCalendar');
-      const calResult = await createCalendarEvent(booking, doctor);
-      if (calResult) {
-        await prisma.booking.update({
-          where: { id: booking.id },
-          data: { ...calResult, calendarSynced: true },
-        });
-      }
+      const { syncBooking } = await import('@/app/lib/googleCalendar');
+      await syncBooking(booking, doctor, { auditOpts: auditOptsFromRequest(req, user!) });
     } catch (err) { logger.warn('Calendar sync failed for new booking', { error: String(err), bookingId: booking.id }); }
 
     const { doctor: doc, ...rest } = booking;

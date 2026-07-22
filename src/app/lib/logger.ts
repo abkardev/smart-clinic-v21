@@ -16,6 +16,12 @@ interface LogMeta {
   correlationId?: string;
   conversationId?: string;
   executionTimeMs?: number;
+  duration?: number;
+  route?: string;
+  method?: string;
+  statusCode?: number;
+  memoryUsage?: string;
+  environment?: string;
 }
 
 function shouldLog(level: Level): boolean {
@@ -35,6 +41,27 @@ function fmt(level: Level, msg: string, meta?: LogMeta) {
   return parts.join(' ');
 }
 
+function captureSentry(level: Level, msg: string, meta?: LogMeta) {
+  if (!process.env.NEXT_PUBLIC_SENTRY_DSN && !process.env.SENTRY_DSN) return;
+  try {
+    const Sentry = require('@sentry/nextjs');
+    const scope = new Sentry.Scope();
+    if (meta) {
+      const { error, ...tags } = meta;
+      scope.setExtras(tags);
+      if (error) scope.setExtra('errorDetail', error);
+    }
+    if (level === 'error') {
+      const err = meta?.error instanceof Error ? meta.error : new Error(msg);
+      Sentry.captureException(err, scope);
+    } else if (level === 'warn') {
+      Sentry.captureMessage(msg, 'warning');
+    }
+  } catch {
+    // Sentry not available — fall through to console
+  }
+}
+
 export const logger = {
   trace: (msg: string, meta?: LogMeta) => {
     if (shouldLog('trace')) console.debug(fmt('trace', msg, meta));
@@ -46,9 +73,15 @@ export const logger = {
     if (shouldLog('info')) console.log(fmt('info', msg, meta));
   },
   warn: (msg: string, meta?: LogMeta) => {
-    if (shouldLog('warn')) console.warn(fmt('warn', msg, meta));
+    if (shouldLog('warn')) {
+      console.warn(fmt('warn', msg, meta));
+      captureSentry('warn', msg, meta);
+    }
   },
   error: (msg: string, meta?: LogMeta) => {
-    if (shouldLog('error')) console.error(fmt('error', msg, meta));
+    if (shouldLog('error')) {
+      console.error(fmt('error', msg, meta));
+      captureSentry('error', msg, meta);
+    }
   },
 };

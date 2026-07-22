@@ -675,9 +675,9 @@ async function executeBooking(
         data.callTimeAr!, data.callTimeEn!
       ));
       try {
-        const { updateCalendarEvent } = await import('./googleCalendar');
+        const { syncBooking } = await import('./googleCalendar');
         const doc = await prisma.doctor.findUnique({ where: { id: data.doctorId! } });
-        if (doc) await updateCalendarEvent(updated, doc);
+        if (doc) await syncBooking(updated, doc);
       } catch { /* non-fatal */ }
       return { bookingId: data.existingBookingId, created: false };
     }
@@ -689,9 +689,8 @@ async function executeBooking(
       if (doc && result) {
         const fullBooking = await prisma.booking.findUnique({ where: { id: result.id } });
         if (fullBooking) {
-          const { createCalendarEvent } = await import('./googleCalendar');
-          const cal = await createCalendarEvent(fullBooking, doc);
-          if (cal) await prisma.booking.update({ where: { id: fullBooking.id }, data: { ...cal, calendarSynced: true } });
+          const { syncBooking } = await import('./googleCalendar');
+          await syncBooking(fullBooking, doc);
         }
       }
     } catch { /* non-fatal */ }

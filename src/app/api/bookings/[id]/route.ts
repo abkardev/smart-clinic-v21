@@ -69,12 +69,12 @@ export async function PUT(
       include: { doctor: { select: doctorSelect } },
     });
 
-    if (body.date || body.time) {
+    if (body.date || body.time || body.status) {
       try {
-        const { updateCalendarEvent } = await import('@/app/lib/googleCalendar');
+        const { syncBooking } = await import('@/app/lib/googleCalendar');
         const doctor = await prisma.doctor.findUnique({ where: { id: booking.doctorId } });
-        if (doctor) await updateCalendarEvent(booking, doctor);
-      } catch (err) { logger.warn('Failed to update calendar event', { error: String(err), bookingId: params.id }); }
+        if (doctor) await syncBooking(booking, doctor, { auditOpts: auditOptsFromRequest(req, user!) });
+      } catch (err) { logger.warn('Failed to sync calendar event', { error: String(err), bookingId: params.id }); }
     }
 
     const changes: Record<string, { before: unknown; after: unknown }> = {};
@@ -116,14 +116,14 @@ export async function DELETE(
     });
     if (!booking) return NextResponse.json({ message: 'Booking not found' }, { status: 404 });
 
+    await prisma.booking.delete({ where: { id: params.id } });
+
     if (booking.calendarEventId && booking.doctor?.calendarId) {
       try {
         const { deleteCalendarEvent } = await import('@/app/lib/googleCalendar');
         await deleteCalendarEvent(booking.doctor.calendarId, booking.calendarEventId);
       } catch (err) { logger.warn('Failed to delete calendar event', { error: String(err), bookingId: params.id }); }
     }
-
-    await prisma.booking.delete({ where: { id: params.id } });
     await logAudit(AuditAction.BOOKING_DELETED, 'Booking', params.id,
       { name: booking.name, date: booking.date, time: booking.time },
       auditOptsFromRequest(req, user!)
