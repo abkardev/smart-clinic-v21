@@ -200,7 +200,7 @@ export async function verifyWebhook(headers: Record<string, string | string[] | 
     return {
       valid: true,
       doctorId: channel.doctorId,
-      resourceState: extracted.resourceState,
+    resourceState: extracted.resourceState ?? undefined,
       messageNumber: mn.number,
       shouldProcess: false,
       statusCode: 200,
@@ -221,7 +221,7 @@ export async function verifyWebhook(headers: Record<string, string | string[] | 
   return {
     valid: true,
     doctorId: channel.doctorId,
-    resourceState: extracted.resourceState,
+    resourceState: extracted.resourceState ?? undefined,
     messageNumber: mn.number,
     shouldProcess: true,
     statusCode: 200,

@@ -4,12 +4,18 @@ import { getAuthUser } from '@/app/lib/auth';
 import { logger } from '@/app/lib/logger';
 
 export async function POST(req: NextRequest) {
-  const user = await getAuthUser(req);
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const auth = await getAuthUser(req);
+  if (auth.error) return auth.error;
+
+  const user = auth.user;
+  let body: any;
+  let doctorId = '';
+  let date = '';
 
   try {
-    const body = await req.json();
-    const { doctorId, date } = body;
+    body = await req.json();
+    doctorId = body.doctorId;
+    date = body.date;
 
     if (!doctorId || !date) {
       return NextResponse.json({ error: 'doctorId and date are required' }, { status: 400 });

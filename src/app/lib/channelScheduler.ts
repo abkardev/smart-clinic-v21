@@ -26,7 +26,7 @@ export async function renewExpiringChannels(): Promise<{
       if (channel.expiration <= new Date()) {
         await prisma.calendarChannel.update({
           where: { id: channel.id },
-          data: { status: 'expired' },
+          data: { status: 'stopped' },
         });
         skipped++;
         continue;

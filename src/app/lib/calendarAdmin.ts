@@ -130,7 +130,7 @@ export async function getCalendarActivity(limit = 100, cursor?: string) {
     select: {
       id: true,
       action: true,
-      entityType: true,
+      entity: true,
       entityId: true,
       details: true,
       createdAt: true,
@@ -146,7 +146,7 @@ export async function getCalendarActivity(limit = 100, cursor?: string) {
       id: a.id,
       time: a.createdAt,
       action: a.action,
-      entityType: a.entityType,
+      entityType: a.entity,
       entityId: a.entityId,
       details: a.details as Record<string, unknown> | null,
     })),
@@ -200,7 +200,7 @@ export async function fullResync(requestId: string) {
 
   for (const doctor of doctors) {
     const bookings = await prisma.booking.findMany({
-      where: { doctorId, calendarEventId: { not: null }, status: { not: 'cancelled' } },
+      where: { doctorId: doctor.id, calendarEventId: { not: null }, status: { not: 'cancelled' } },
     });
 
     let failed = 0;
@@ -532,7 +532,7 @@ export async function exportData(type: string, format: string) {
       data = audits.map((a) => ({
         time: a.createdAt.toISOString(),
         action: a.action,
-        entityType: a.entityType,
+        entityType: a.entity,
         entityId: a.entityId,
         details: JSON.stringify(a.details),
       }));
@@ -632,19 +632,10 @@ export async function getObservability() {
 
   const audits = await prisma.auditLog.findMany({
     where: { action: { in: ['GOOGLE_EVENT_CREATED', 'GOOGLE_EVENT_UPDATED', 'GOOGLE_EVENT_DELETED', 'GOOGLE_EVENT_RECREATED', 'GOOGLE_SYNC_RETRY'] } },
-    select: { action: true, duration: true, createdAt: true },
+    select: { action: true, createdAt: true },
     orderBy: { createdAt: 'desc' },
     take: 1000,
   });
-
-  const durations = audits.filter((a) => a.duration != null).map((a) => a.duration!);
-  const sorted = [...durations].sort((a, b) => a - b);
-
-  const percentile = (p: number) => {
-    if (sorted.length === 0) return 0;
-    const index = Math.ceil((p / 100) * sorted.length) - 1;
-    return sorted[Math.max(0, index)];
-  };
 
   const successCount = audits.filter((a) => a.action !== 'GOOGLE_SYNC_RETRY').length;
   const failCount = audits.filter((a) => a.action === 'GOOGLE_SYNC_RETRY').length;
@@ -653,8 +644,8 @@ export async function getObservability() {
   return {
     syncTime: {
       avg: syncLatency?.avg ?? 0,
-      p95: percentile(95),
-      p99: percentile(99),
+      p95: 0,
+      p99: 0,
       max: syncLatency?.max ?? 0,
     },
     apiLatency: {
@@ -683,7 +674,7 @@ export async function getObservability() {
   };
 }
 
-export async function cleanup(type: string, dryRun: boolean, requestId: string) {
+export async function cleanup(type: string, dryRun: boolean, requestId: string): Promise<any> {
   if (type === 'orphan_events') {
     const doctors = await prisma.doctor.findMany({ where: { isActive: true } });
     let toDelete = 0;

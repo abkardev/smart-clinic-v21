@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, vi } from 'vitest';
+import { NextRequest } from 'next/server';
 import { prisma, cleanDatabase } from './setup';
 
 const googleMock = vi.hoisted(() => ({
@@ -163,7 +164,7 @@ describe('Load: Google Calendar API', () => {
       const retryRoute = await import('@/app/api/internal/calendar/retry/route');
 
       const workers = Array.from({ length: 3 }, (_, i) =>
-        measureLatency(() => retryRoute.POST().catch(() => ({ status: 500 })))
+        measureLatency(() => retryRoute.POST(new NextRequest('http://localhost')).catch(() => ({ status: 500 })))
       );
 
       const results = await Promise.all(workers);

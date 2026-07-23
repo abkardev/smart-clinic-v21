@@ -26,7 +26,7 @@ async function processSync(doctorId: string): Promise<void> {
     const nextSyncToken = response.data.nextSyncToken;
 
     for (const event of events) {
-      await handleGoogleEvent(event, doctorId);
+      await handleGoogleEvent(event as Record<string, unknown>, doctorId);
     }
 
     if (nextSyncToken) {

@@ -4,11 +4,11 @@ import { getAuthUser, requireRole } from '@/app/lib/auth';
 import { logger } from '@/app/lib/logger';
 
 export async function POST(req: NextRequest) {
-  const user = await getAuthUser(req);
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const auth = await getAuthUser(req);
+  if (auth.error) return auth.error;
 
-  const roleErr = requireRole(user, ['superadmin', 'admin']);
-  if (roleErr) return NextResponse.json({ error: roleErr }, { status: 403 });
+  const roleErr = requireRole(auth.user, 'superadmin', 'admin');
+  if (roleErr) return roleErr;
 
   try {
     const body = await req.json();
