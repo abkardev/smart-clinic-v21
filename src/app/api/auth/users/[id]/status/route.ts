@@ -10,16 +10,18 @@ import { UserStatus } from '@prisma/client';
 // PATCH /api/auth/users/[id]/status
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const { user, error } = await getAuthUser(req);
   if (error) return error;
   const roleError = requireRole(user!, 'superadmin');
   if (roleError) return roleError;
 
+  const { id } = await params;
+
   try {
     const { status } = await req.json() as { status: UserStatus };
-    const target = await prisma.user.findUnique({ where: { id: params.id } });
+    const target = await prisma.user.findUnique({ where: { id } });
     if (!target) return NextResponse.json({ message: 'User not found' }, { status: 404 });
 
     if (target.role === 'superadmin' && user!.role !== 'superadmin') {
@@ -27,7 +29,7 @@ export async function PATCH(
     }
 
     const updated = await prisma.user.update({
-      where: { id: params.id },
+      where: { id },
       data: {
         status,
         ...(status === 'approved' ? { approvedById: user!.id, approvedAt: new Date() } : {}),
@@ -38,14 +40,14 @@ export async function PATCH(
       },
     });
 
-    await logAudit(AuditAction.USER_STATUS_CHANGED, 'User', params.id,
+    await logAudit(AuditAction.USER_STATUS_CHANGED, 'User', id,
       { status, targetUser: target.email },
       auditOptsFromRequest(req, user!)
     );
 
     return NextResponse.json({ message: `User ${status}`, user: updated });
   } catch (err) {
-    logger.error('Failed to update user status', { error: String(err), userId: params.id });
+    logger.error('Failed to update user status', { error: String(err), userId: id });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }

@@ -20,6 +20,9 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui"
   },
+  "overrides": {
+    "google-auth-library": "10.9.1"
+  },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
   },

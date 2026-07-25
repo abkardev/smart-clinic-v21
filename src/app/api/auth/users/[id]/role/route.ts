@@ -10,12 +10,14 @@ import { UserRole } from '@prisma/client';
 // PATCH /api/auth/users/[id]/role
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const { user, error } = await getAuthUser(req);
   if (error) return error;
   const roleError = requireRole(user!, 'superadmin');
   if (roleError) return roleError;
+
+  const { id } = await params;
 
   try {
     const { role } = await req.json() as { role: UserRole };
@@ -24,7 +26,7 @@ export async function PATCH(
       return NextResponse.json({ message: 'Invalid role' }, { status: 400 });
     }
 
-    const target = await prisma.user.findUnique({ where: { id: params.id } });
+    const target = await prisma.user.findUnique({ where: { id } });
     if (!target) return NextResponse.json({ message: 'User not found' }, { status: 404 });
 
     if ((role === 'superadmin' || target.role === 'superadmin') && user!.role !== 'superadmin') {
@@ -32,7 +34,7 @@ export async function PATCH(
     }
 
     const updated = await prisma.user.update({
-      where: { id: params.id },
+      where: { id },
       data: { role },
       select: {
         id: true, name: true, email: true, role: true, status: true,
@@ -40,14 +42,14 @@ export async function PATCH(
       },
     });
 
-    await logAudit(AuditAction.USER_ROLE_CHANGED, 'User', params.id,
+    await logAudit(AuditAction.USER_ROLE_CHANGED, 'User', id,
       { newRole: role, oldRole: target.role, targetUser: target.email },
       auditOptsFromRequest(req, user!)
     );
 
     return NextResponse.json(updated);
   } catch (err) {
-    logger.error('Failed to update user role', { error: String(err), userId: params.id });
+    logger.error('Failed to update user role', { error: String(err), userId: id });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }

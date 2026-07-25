@@ -15,7 +15,7 @@ interface OfferBody {
 
 export async function PUT(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const { user, error } = await getAuthUser(req);
   if (error) return error;
@@ -25,11 +25,12 @@ export async function PUT(
   let uploadedPublicId: string | undefined;
 
   try {
+    const { id } = await params;
     const body = await req.json() as OfferBody;
 
     let imageUrl: string | undefined;
     if (body.imageBase64 !== undefined) {
-      const currentOffer = await prisma.offer.findUnique({ where: { id: params.id } });
+      const currentOffer = await prisma.offer.findUnique({ where: { id } });
       const oldImageUrl = currentOffer?.imageUrl;
 
       if (body.imageBase64?.startsWith('data:image')) {
@@ -46,7 +47,7 @@ export async function PUT(
     }
 
     const offer = await prisma.offer.update({
-      where: { id: params.id },
+      where: { id },
       data: {
         ...(body.titleEn       !== undefined && { titleEn: body.titleEn }),
         ...(body.titleAr       !== undefined && { titleAr: body.titleAr }),
@@ -73,7 +74,7 @@ export async function PUT(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const { user, error } = await getAuthUser(req);
   if (error) return error;
@@ -81,13 +82,14 @@ export async function DELETE(
   if (roleError) return roleError;
 
   try {
-    const offer = await prisma.offer.findUnique({ where: { id: params.id } });
+    const { id } = await params;
+    const offer = await prisma.offer.findUnique({ where: { id } });
     if (!offer) return NextResponse.json({ message: 'Offer not found' }, { status: 404 });
 
     await deleteOfferImage(offer.imageUrl);
-    await prisma.offer.delete({ where: { id: params.id } });
+    await prisma.offer.delete({ where: { id } });
 
-    await logAudit(AuditAction.OFFER_DELETED, 'Offer', params.id, null, auditOptsFromRequest(req, user!));
+    await logAudit(AuditAction.OFFER_DELETED, 'Offer', id, null, auditOptsFromRequest(req, user!));
     return NextResponse.json({ message: 'Offer deleted' });
   } catch (err: unknown) {
     const e = err as { code?: string };

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { google as googleApis } from 'googleapis';
 import { prisma } from '@/app/lib/prisma';
 import { exchangeDoctorCode, createDoctorClient, setDoctorClient } from '@/app/lib/google';
 import { logAudit } from '@/app/lib/audit';
@@ -57,16 +58,13 @@ export async function GET(req: NextRequest) {
       const client = createDoctorClient(tokens.access_token, refreshToken, expires ?? undefined);
       setDoctorClient(doctorId, client);
 
-      const { google: googleApi } = await import('@/app/lib/google');
-      if (googleApi) {
-        const res = await googleApi.calendarList.list({ auth: client });
-        const primary = res.data.items?.find((c) => c.primary) ?? res.data.items?.[0];
-        if (primary?.id) {
-          await prisma.doctor.update({
-            where: { id: doctorId },
-            data: { calendarId: primary.id },
-          }).catch(() => {});
-        }
+      const res = await googleApis.calendar({ version: 'v3', auth: client }).calendarList.list();
+      const primary = res.data.items?.find((c) => c.primary) ?? res.data.items?.[0];
+      if (primary?.id) {
+        await prisma.doctor.update({
+          where: { id: doctorId },
+          data: { calendarId: primary.id },
+        }).catch(() => {});
       }
     }
 

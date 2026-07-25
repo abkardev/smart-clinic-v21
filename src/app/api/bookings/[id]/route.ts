@@ -22,28 +22,30 @@ interface BookingBody {
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
+
   try {
     const { error } = await getAuthUser(req);
     if (error) return error;
 
     const booking = await prisma.booking.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: { doctor: true },
     });
     if (!booking) return NextResponse.json({ message: 'Booking not found' }, { status: 404 });
     const { doctor, ...rest } = booking;
     return apiResponse({ ...rest, doctorId: doctor });
   } catch (err) {
-    logger.error('Failed to fetch booking', { error: String(err), bookingId: params.id });
+    logger.error('Failed to fetch booking', { error: String(err), bookingId: id });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }
 
 export async function PUT(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { user, error } = await getAuthUser(req);
@@ -51,10 +53,11 @@ export async function PUT(
     const roleError = requireRole(user!, 'superadmin', 'admin');
     if (roleError) return roleError;
 
+    const { id } = await params;
     const body = await req.json() as BookingBody;
-    const before = await prisma.booking.findUnique({ where: { id: params.id } });
+    const before = await prisma.booking.findUnique({ where: { id } });
     const booking = await prisma.booking.update({
-      where: { id: params.id },
+      where: { id },
       data: {
         ...(body.name        !== undefined && { name: body.name }),
         ...(body.phone       !== undefined && { phone: body.phone }),
@@ -74,7 +77,7 @@ export async function PUT(
         const { syncBooking } = await import('@/app/lib/googleCalendar');
         const doctor = await prisma.doctor.findUnique({ where: { id: booking.doctorId } });
         if (doctor) await syncBooking(booking, doctor, { auditOpts: auditOptsFromRequest(req, user!) });
-      } catch (err) { logger.warn('Failed to sync calendar event', { error: String(err), bookingId: params.id }); }
+      } catch (err) { logger.warn('Failed to sync calendar event', { error: String(err), bookingId: id }); }
     }
 
     const changes: Record<string, { before: unknown; after: unknown }> = {};
@@ -86,7 +89,7 @@ export async function PUT(
       }
     }
 
-    await logAudit(AuditAction.BOOKING_UPDATED, 'Booking', params.id,
+    await logAudit(AuditAction.BOOKING_UPDATED, 'Booking', id,
       { changes, status: booking.status },
       auditOptsFromRequest(req, user!)
     );
@@ -102,8 +105,10 @@ export async function PUT(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
+
   try {
     const { user, error } = await getAuthUser(req);
     if (error) return error;
@@ -111,26 +116,26 @@ export async function DELETE(
     if (roleError) return roleError;
 
     const booking = await prisma.booking.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: { doctor: true },
     });
     if (!booking) return NextResponse.json({ message: 'Booking not found' }, { status: 404 });
 
-    await prisma.booking.delete({ where: { id: params.id } });
+    await prisma.booking.delete({ where: { id } });
 
     if (booking.calendarEventId && booking.doctor?.calendarId) {
       try {
         const { deleteCalendarEvent } = await import('@/app/lib/googleCalendar');
         await deleteCalendarEvent(booking.doctor.calendarId, booking.calendarEventId);
-      } catch (err) { logger.warn('Failed to delete calendar event', { error: String(err), bookingId: params.id }); }
+      } catch (err) { logger.warn('Failed to delete calendar event', { error: String(err), bookingId: id }); }
     }
-    await logAudit(AuditAction.BOOKING_DELETED, 'Booking', params.id,
+    await logAudit(AuditAction.BOOKING_DELETED, 'Booking', id,
       { name: booking.name, date: booking.date, time: booking.time },
       auditOptsFromRequest(req, user!)
     );
     return NextResponse.json({ message: 'Booking deleted' });
   } catch (err) {
-    logger.error('Failed to delete booking', { error: String(err), bookingId: params.id });
+    logger.error('Failed to delete booking', { error: String(err), bookingId: id });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }

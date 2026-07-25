@@ -20,14 +20,16 @@ const WA_HEADERS = () => ({
 // POST /api/whatsapp/reminder/[id]
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const { error } = await getAuthUser(req);
   if (error) return error;
 
+  const { id } = await params;
+
   try {
     const booking = await prisma.booking.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: { doctor: true },
     });
     if (!booking) return NextResponse.json({ message: 'Booking not found' }, { status: 404 });
@@ -60,13 +62,13 @@ export async function POST(
     }
 
     await prisma.booking.update({
-      where: { id: params.id },
+      where: { id },
       data: { reminderSent: true, reminderSentAt: new Date() },
     });
 
     return NextResponse.json({ message: 'Reminder sent successfully' });
   } catch (err) {
-    logger.error('Failed to send reminder', { error: String(err), bookingId: params.id });
+    logger.error('Failed to send reminder', { error: String(err), bookingId: id });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }

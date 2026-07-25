@@ -10,16 +10,18 @@ import { sendAppointmentReminderEmail } from '@/app/lib/email';
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const { user, error } = await getAuthUser(req);
   if (error) return error;
   const roleError = requireRole(user!, 'superadmin', 'admin');
   if (roleError) return roleError;
 
+  const { id } = await params;
+
   try {
     const booking = await prisma.booking.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: { doctor: true },
     });
     if (!booking) return NextResponse.json({ message: 'Booking not found' }, { status: 404 });
@@ -45,21 +47,21 @@ export async function POST(
     );
 
     await prisma.booking.update({
-      where: { id: params.id },
+      where: { id },
       data: { reminderSent: true, reminderSentAt: new Date() },
     });
 
     await logAudit(
       AuditAction.REMINDER_SENT,
       'Booking',
-      params.id,
+      id,
       { type: 'email', email, patientName: booking.name },
       auditOptsFromRequest(req, user!),
     );
 
     return NextResponse.json({ message: 'Email reminder sent successfully' });
   } catch (err) {
-    logger.error('Failed to send email reminder', { error: String(err), bookingId: params.id });
+    logger.error('Failed to send email reminder', { error: String(err), bookingId: id });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }

@@ -9,16 +9,18 @@ import { logger } from '@/app/lib/logger';
 // DELETE /api/blocked-slots/[id]
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const { user, error } = await getAuthUser(req);
   if (error) return error;
   const roleError = requireRole(user!, 'superadmin', 'admin', 'doctor');
   if (roleError) return roleError;
 
+  const { id } = await params;
+
   try {
     const slot = await prisma.blockedSlot.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: { doctor: true },
     });
     if (!slot) return NextResponse.json({ message: 'Blocked slot not found' }, { status: 404 });
@@ -40,12 +42,12 @@ export async function DELETE(
       }
     }
 
-    await prisma.blockedSlot.delete({ where: { id: params.id } });
-    await logAudit(AuditAction.SLOT_UNBLOCKED, 'BlockedSlot', params.id, { doctorId: slot.doctorId }, auditOptsFromRequest(req, user!));
+    await prisma.blockedSlot.delete({ where: { id } });
+    await logAudit(AuditAction.SLOT_UNBLOCKED, 'BlockedSlot', id, { doctorId: slot.doctorId }, auditOptsFromRequest(req, user!));
 
     return NextResponse.json({ message: 'Slot unblocked' });
   } catch (err) {
-    logger.error('Failed to unblock slot', { error: String(err), slotId: params.id });
+    logger.error('Failed to unblock slot', { error: String(err), slotId: id });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }

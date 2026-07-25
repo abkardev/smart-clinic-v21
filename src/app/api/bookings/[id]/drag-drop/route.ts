@@ -12,7 +12,7 @@ import { logger } from '@/app/lib/logger';
 // PATCH /api/bookings/[id]/drag-drop
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { user, error } = await getAuthUser(req);
@@ -20,10 +20,11 @@ export async function PATCH(
     const roleError = requireRole(user!, 'superadmin', 'admin');
     if (roleError) return roleError;
 
+    const { id } = await params;
     const { date, time } = await req.json() as { date: string; time: string };
 
     const booking = await prisma.booking.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: { doctor: true },
     });
     if (!booking) return NextResponse.json({ message: 'Booking not found' }, { status: 404 });
@@ -34,16 +35,16 @@ export async function PATCH(
     }
 
     const updated = await prisma.booking.update({
-      where: { id: params.id },
+      where: { id },
       data: { date, time },
     });
 
     try {
       const { syncBooking } = await import('@/app/lib/googleCalendar');
       await syncBooking(updated, booking.doctor, { auditOpts: auditOptsFromRequest(req, user!) });
-    } catch (err) { logger.warn('Failed to sync calendar event after drag', { error: String(err), bookingId: params.id }); }
+    } catch (err) { logger.warn('Failed to sync calendar event after drag', { error: String(err), bookingId: id }); }
 
-    await logAudit(AuditAction.BOOKING_DRAGGED, 'Booking', params.id,
+    await logAudit(AuditAction.BOOKING_DRAGGED, 'Booking', id,
       { oldDate: booking.date, oldTime: booking.time, newDate: date, newTime: time },
       auditOptsFromRequest(req, user!)
     );

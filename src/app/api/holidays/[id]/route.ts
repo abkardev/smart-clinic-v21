@@ -8,7 +8,7 @@ import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
 // DELETE /api/holidays/[id]
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const { user, error } = await getAuthUser(req);
   if (error) return error;
@@ -16,8 +16,9 @@ export async function DELETE(
   if (roleError) return roleError;
 
   try {
-    await prisma.holiday.delete({ where: { id: params.id } });
-    await logAudit(AuditAction.HOLIDAY_DELETED, 'Holiday', params.id, null, auditOptsFromRequest(req, user!));
+    const { id } = await params;
+    await prisma.holiday.delete({ where: { id } });
+    await logAudit(AuditAction.HOLIDAY_DELETED, 'Holiday', id, null, auditOptsFromRequest(req, user!));
     return NextResponse.json({ message: 'Holiday deleted' });
   } catch (err: unknown) {
     const e = err as { code?: string };

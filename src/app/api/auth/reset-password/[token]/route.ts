@@ -10,16 +10,17 @@ import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { token: string } }
+  { params }: { params: Promise<{ token: string }> }
 ) {
   try {
+    const { token } = await params;
     const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
     const rl = await checkRateLimit(`reset-password:${ip}`, 5, 60 * 60 * 1000);
     if (!rl.allowed) {
       return NextResponse.json({ message: 'Too many attempts. Please try again later.', messageAr: 'محاولات كثيرة. يرجى المحاولة لاحقاً.' }, { status: 429 });
     }
 
-    const hashed = crypto.createHash('sha256').update(params.token).digest('hex');
+    const hashed = crypto.createHash('sha256').update(token).digest('hex');
 
     const user = await prisma.user.findFirst({
       where: {

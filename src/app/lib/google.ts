@@ -1,5 +1,6 @@
 import { google as googleApis } from 'googleapis';
-import type { OAuth2Client } from 'google-auth-library';
+
+export type OAuth2Client = InstanceType<typeof googleApis.auth.OAuth2>;
 
 const auth = new googleApis.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
@@ -56,7 +57,7 @@ export function createDoctorClient(
   accessToken: string,
   refreshToken: string,
   expiresAt?: Date,
-): OAuth2Client {
+) {
   const oauth = new googleApis.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
@@ -70,7 +71,7 @@ export function createDoctorClient(
   return oauth;
 }
 
-export function getDoctorCalendar(doctorId: string): typeof google | null {
+export function getDoctorCalendar(doctorId: string) {
   const client = doctorClients.get(doctorId);
   if (!client) return null;
   return googleApis.calendar({ version: 'v3', auth: client });
@@ -78,6 +79,10 @@ export function getDoctorCalendar(doctorId: string): typeof google | null {
 
 export function setDoctorClient(doctorId: string, client: OAuth2Client): void {
   doctorClients.set(doctorId, client);
+}
+
+export function getDoctorClient(doctorId: string): OAuth2Client | undefined {
+  return doctorClients.get(doctorId);
 }
 
 export function removeDoctorClient(doctorId: string): void {

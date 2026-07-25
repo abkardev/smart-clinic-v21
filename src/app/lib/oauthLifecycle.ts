@@ -1,8 +1,8 @@
 import { prisma } from './prisma';
 import { logger } from './logger';
 import { logAudit } from './audit';
-import { createDoctorClient, setDoctorClient, removeDoctorClient, getDoctorCalendar } from './google';
-import type { OAuth2Client } from 'google-auth-library';
+import { createDoctorClient, setDoctorClient, getDoctorClient, removeDoctorClient, getDoctorCalendar } from './google';
+import type { OAuth2Client } from './google';
 
 const TOKEN_REFRESH_LEAD_TIME_MS = 5 * 60 * 1000;
 const MAX_REFRESH_RETRIES = 3;
@@ -31,9 +31,9 @@ export async function getDoctorOAuthStatus(doctorId: string): Promise<OAuthStatu
 }
 
 export async function getDoctorAuthClient(doctorId: string): Promise<{ client: OAuth2Client | null; needsReconnect: boolean }> {
-  const existing = getDoctorCalendar(doctorId);
+  const existing = getDoctorClient(doctorId);
   if (existing) {
-    return { client: (existing as unknown as { auth: OAuth2Client }).auth, needsReconnect: false };
+    return { client: existing, needsReconnect: false };
   }
 
   const token = await prisma.doctorCalendarToken.findUnique({ where: { doctorId } });

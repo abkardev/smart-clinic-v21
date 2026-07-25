@@ -20,21 +20,23 @@ interface DoctorBody {
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
+
   try {
-    const doctor = await prisma.doctor.findUnique({ where: { id: params.id } });
+    const doctor = await prisma.doctor.findUnique({ where: { id } });
     if (!doctor) return NextResponse.json({ message: 'Doctor not found' }, { status: 404 });
     return NextResponse.json(doctor);
   } catch (err) {
-    logger.error('Failed to fetch doctor', { error: String(err), doctorId: params.id });
+    logger.error('Failed to fetch doctor', { error: String(err), doctorId: id });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }
 
 export async function PUT(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const { user, error } = await getAuthUser(req);
   if (error) return error;
@@ -42,12 +44,13 @@ export async function PUT(
   if (roleError) return roleError;
 
   try {
+    const { id } = await params;
     // Capture before state for audit diff
-    const before = await prisma.doctor.findUnique({ where: { id: params.id } });
+    const before = await prisma.doctor.findUnique({ where: { id } });
     const body = await req.json() as DoctorBody;
 
     const doctor = await prisma.doctor.update({
-      where: { id: params.id },
+      where: { id },
       data: {
         nameEn:       body.nameEn,
         nameAr:       body.nameAr,
@@ -93,25 +96,27 @@ export async function PUT(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const { user, error } = await getAuthUser(req);
   if (error) return error;
   const roleError = requireRole(user!, 'superadmin', 'admin');
   if (roleError) return roleError;
 
-  try {
-    const before = await prisma.doctor.findUnique({ where: { id: params.id } });
-    await prisma.doctor.update({ where: { id: params.id }, data: { isActive: false } });
+  const { id } = await params;
 
-    await logAudit(AuditAction.DOCTOR_DEACTIVATED, 'Doctor', params.id,
+  try {
+    const before = await prisma.doctor.findUnique({ where: { id } });
+    await prisma.doctor.update({ where: { id }, data: { isActive: false } });
+
+    await logAudit(AuditAction.DOCTOR_DEACTIVATED, 'Doctor', id,
       { nameEn: before?.nameEn, nameAr: before?.nameAr },
       auditOptsFromRequest(req, user!)
     );
 
     return NextResponse.json({ message: 'Doctor deactivated' });
   } catch (err) {
-    logger.error('Failed to deactivate doctor', { error: String(err), doctorId: params.id });
+    logger.error('Failed to deactivate doctor', { error: String(err), doctorId: id });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });
   }
 }
