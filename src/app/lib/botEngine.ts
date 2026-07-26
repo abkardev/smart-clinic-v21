@@ -130,7 +130,10 @@ async function sendMainMenu(userId: string, adapter: BotAdapter) {
 }
 
 async function sendDoctorsList(userId: string, adapter: BotAdapter) {
-  const doctors = await prisma.doctor.findMany({ where: { isActive: true } });
+  const doctors = await prisma.doctor.findMany({
+    where: { isActive: true },
+    select: { id: true, nameAr: true, nameEn: true, specialtyAr: true, specialtyEn: true },
+  });
   if (!doctors.length) return adapter.sendText(userId, MSG.noDoctors);
   return adapter.sendList(userId, waHeader(bi('اختر الطبيب', 'Choose Doctor')), MSG.selectDoctor, waButtonLabel('اختر', 'Choose'), [
     { title: waSectionTitle('الأطباء', 'Doctors'), rows: doctors.map(d => ({

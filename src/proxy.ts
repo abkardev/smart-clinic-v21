@@ -8,17 +8,25 @@ const SECURITY_HEADERS = {
   'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https:; frame-src 'none'; object-src 'none'",
 };
 
-const PUBLIC_PREFIXES = [
+const EXACT_PUBLIC = new Set([
+  '/api/health',
+  '/api/doctors/connect-calendar',
+]);
+
+const PREFIX_PUBLIC = [
   '/api/auth/login',
   '/api/auth/register',
   '/api/auth/forgot-password',
   '/api/auth/reset-password',
-  '/api/health',
   '/api/whatsapp/webhook',
   '/api/instagram/webhook',
-  '/api/doctors',
   '/api/bookings/available-slots',
 ];
+
+function isPublicPath(pathname: string): boolean {
+  if (EXACT_PUBLIC.has(pathname)) return true;
+  return PREFIX_PUBLIC.some(p => pathname.startsWith(p));
+}
 
 function isValidJwtFormat(token: string): boolean {
   const parts = token.split('.');
@@ -32,9 +40,7 @@ function isValidJwtFormat(token: string): boolean {
 }
 
 function generateCorrelationId(): string {
-  const ts = Date.now().toString(36);
-  const rand = Math.random().toString(36).slice(2, 8);
-  return `${ts}${rand}`;
+  return globalThis.crypto.randomUUID();
 }
 
 function addSecurityHeaders(res: NextResponse) {
@@ -46,7 +52,7 @@ function addSecurityHeaders(res: NextResponse) {
   }
 }
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const correlationId = generateCorrelationId();
   const start = Date.now();
@@ -55,7 +61,7 @@ export function middleware(req: NextRequest) {
   requestHeaders.set('x-correlation-id', correlationId);
 
   if (pathname.startsWith('/api/')) {
-    if (PUBLIC_PREFIXES.some(p => pathname.startsWith(p))) {
+    if (isPublicPath(pathname)) {
       const res = NextResponse.next({ request: { headers: requestHeaders } });
       res.headers.set('x-correlation-id', correlationId);
       addSecurityHeaders(res);

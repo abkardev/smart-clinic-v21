@@ -1,13 +1,12 @@
-import { google as googleApis } from 'googleapis';
+import { OAuth2Client } from 'google-auth-library';
 
-export type OAuth2Client = InstanceType<typeof googleApis.auth.OAuth2>;
+export type { OAuth2Client };
 
 let _auth: OAuth2Client | undefined;
-let _calendar: ReturnType<typeof googleApis.calendar> | undefined;
 
-function getAuth(): OAuth2Client {
+export function getAuth(): OAuth2Client {
   if (!_auth) {
-    _auth = new googleApis.auth.OAuth2(
+    _auth = new OAuth2Client(
       process.env.GOOGLE_CLIENT_ID,
       process.env.GOOGLE_CLIENT_SECRET,
       process.env.GOOGLE_REDIRECT_URI,
@@ -18,15 +17,6 @@ function getAuth(): OAuth2Client {
   }
   return _auth;
 }
-
-export function getGoogleCalendar() {
-  if (!_calendar) {
-    _calendar = googleApis.calendar({ version: 'v3', auth: getAuth() });
-  }
-  return _calendar;
-}
-
-const doctorClients = new Map<string, OAuth2Client>();
 
 export function getAuthUrl(): string {
   return getAuth().generateAuthUrl({
@@ -42,7 +32,7 @@ export async function exchangeCode(code: string) {
 }
 
 export function getDoctorAuthUrl(redirectUri: string): string {
-  const oauth = new googleApis.auth.OAuth2(
+  const oauth = new OAuth2Client(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
     redirectUri,
@@ -56,7 +46,7 @@ export function getDoctorAuthUrl(redirectUri: string): string {
 }
 
 export async function exchangeDoctorCode(code: string, redirectUri: string) {
-  const oauth = new googleApis.auth.OAuth2(
+  const oauth = new OAuth2Client(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
     redirectUri,
@@ -65,12 +55,14 @@ export async function exchangeDoctorCode(code: string, redirectUri: string) {
   return { tokens, client: oauth };
 }
 
+const doctorClients = new Map<string, OAuth2Client>();
+
 export function createDoctorClient(
   accessToken: string,
   refreshToken: string,
   expiresAt?: Date,
 ) {
-  const oauth = new googleApis.auth.OAuth2(
+  const oauth = new OAuth2Client(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
     process.env.GOOGLE_REDIRECT_URI,
@@ -81,12 +73,6 @@ export function createDoctorClient(
     expiry_date: expiresAt?.getTime(),
   });
   return oauth;
-}
-
-export function getDoctorCalendar(doctorId: string) {
-  const client = doctorClients.get(doctorId);
-  if (!client) return null;
-  return googleApis.calendar({ version: 'v3', auth: client });
 }
 
 export function setDoctorClient(doctorId: string, client: OAuth2Client): void {

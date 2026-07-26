@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
   try {
     const { doctorId, date, time, reason, isWholeDay } = await req.json() as { doctorId: string; date: string; time?: string; reason?: string; isWholeDay?: boolean };
 
-    const doctor = await prisma.doctor.findUnique({ where: { id: doctorId } });
+    const doctor = await prisma.doctor.findUnique({ where: { id: doctorId }, select: { calendarId: true, id: true } });
     if (!doctor) return NextResponse.json({ message: 'Doctor not found' }, { status: 404 });
 
     // Doctors can only block their own slots

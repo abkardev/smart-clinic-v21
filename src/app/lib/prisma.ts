@@ -28,11 +28,17 @@ function getPrismaInstance(): PrismaClient {
   return globalForPrisma.prisma;
 }
 
+let _validated = false;
+
+function ensureValidated(): void {
+  if (_validated) return;
+  _validated = true;
+  import('./config').then(({ validateConfigOrThrow }) => validateConfigOrThrow()).catch(() => {});
+}
+
 export const prisma = new Proxy({} as PrismaClient, {
   get(_, prop: keyof PrismaClient) {
+    ensureValidated();
     return getPrismaInstance()[prop];
   },
 });
-
-// ─── Startup configuration validation (async, non-blocking) ──────────────────
-import('./config').then(({ validateConfigOrThrow }) => validateConfigOrThrow()).catch(() => {});

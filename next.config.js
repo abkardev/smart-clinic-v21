@@ -2,6 +2,10 @@ const { withSentryConfig } = require('@sentry/nextjs');
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // ── Server externals ──────────────────────────────────────────────────────
+  // jspdf uses canvas/node which breaks when bundled.
+  serverExternalPackages: ['jspdf'],
+
   // ── Force all pages to be dynamic (no static prerender) ───────────────────
   // This is a SPA — all pages require auth context, no static content.
   output: undefined,
@@ -41,7 +45,7 @@ const nextConfig = {
     config.ignoreWarnings = [{ module: /node_modules\/googleapis/ }];
 
     if (isServer) {
-      config.externals = [...(config.externals || []), 'jspdf'];
+      config.externals = [...(config.externals || []), 'jspdf', 'googleapis'];
     }
 
     if (!isServer) {

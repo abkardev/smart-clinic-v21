@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { uploadOfferImage, deleteOfferImage, deleteImage } from '@/app/lib/offerStorage';
 import { prisma } from '@/app/lib/prisma';
 import { getAuthUser, requireRole } from '@/app/lib/auth';
+import { logger } from '@/app/lib/logger';
 import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
 
 interface OfferBody {
@@ -30,7 +31,7 @@ export async function PUT(
 
     let imageUrl: string | undefined;
     if (body.imageBase64 !== undefined) {
-      const currentOffer = await prisma.offer.findUnique({ where: { id } });
+      const currentOffer = await prisma.offer.findUnique({ where: { id }, select: { imageUrl: true } });
       const oldImageUrl = currentOffer?.imageUrl;
 
       if (body.imageBase64?.startsWith('data:image')) {
@@ -63,6 +64,7 @@ export async function PUT(
     await logAudit(AuditAction.OFFER_UPDATED, 'Offer', offer.id, { titleEn: offer.titleEn }, auditOptsFromRequest(req, user!));
     return NextResponse.json(offer);
   } catch (err: unknown) {
+    logger.error('Offer update error', { error: String(err) });
     if (uploadedPublicId) {
       await deleteImage(uploadedPublicId).catch(() => {});
     }
@@ -83,7 +85,7 @@ export async function DELETE(
 
   try {
     const { id } = await params;
-    const offer = await prisma.offer.findUnique({ where: { id } });
+    const offer = await prisma.offer.findUnique({ where: { id }, select: { imageUrl: true } });
     if (!offer) return NextResponse.json({ message: 'Offer not found' }, { status: 404 });
 
     await deleteOfferImage(offer.imageUrl);
@@ -92,6 +94,7 @@ export async function DELETE(
     await logAudit(AuditAction.OFFER_DELETED, 'Offer', id, null, auditOptsFromRequest(req, user!));
     return NextResponse.json({ message: 'Offer deleted' });
   } catch (err: unknown) {
+    logger.error('Offer delete error', { error: String(err) });
     const e = err as { code?: string };
     if (e.code === 'P2025') return NextResponse.json({ message: 'Offer not found' }, { status: 404 });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });

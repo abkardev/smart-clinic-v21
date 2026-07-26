@@ -215,8 +215,8 @@ export async function createCalendarEvent(
   metrics.googleCalendarLatency.observe(Date.now() - start);
 
   return {
-    calendarEventId: event.data.id ?? '',
-    calendarLink: event.data.htmlLink ?? '',
+    calendarEventId: String(event.data.id ?? ''),
+    calendarLink: String(event.data.htmlLink ?? ''),
   };
 }
 

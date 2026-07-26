@@ -6,14 +6,15 @@ import { getTokenHealth } from '@/app/lib/oauthLifecycle';
 import { getDedupStats } from '@/app/lib/notificationDedup';
 
 export async function GET(req: NextRequest) {
-  const format = req.nextUrl.searchParams.get('format') ?? 'prometheus';
+  try {
+    const format = req.nextUrl.searchParams.get('format') ?? 'prometheus';
 
-  const [channelHealth, tokenHealth, quota, dedupStats] = await Promise.all([
-    getChannelHealth(),
-    getTokenHealth(),
-    Promise.resolve(getQuotaUsage()),
-    getDedupStats(),
-  ]);
+    const [channelHealth, tokenHealth, quota, dedupStats] = await Promise.all([
+      getChannelHealth(),
+      getTokenHealth(),
+      Promise.resolve(getQuotaUsage()),
+      getDedupStats(),
+    ]);
 
   metrics.googleCalendarChannels.set(channelHealth.active);
   metrics.googleCalendarQuotaRemaining.set(Math.max(0, quota.dailyLimit - quota.dailyRequests));
@@ -84,4 +85,7 @@ export async function GET(req: NextRequest) {
   return new NextResponse(lines.join('\n') + '\n', {
     headers: { 'Content-Type': 'text/plain; charset=utf-8' },
   });
+  } catch (err) {
+    return NextResponse.json({ error: 'Metrics error' }, { status: 500 });
+  }
 }

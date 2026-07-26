@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { google as googleApis } from 'googleapis';
 import { prisma } from '@/app/lib/prisma';
-import { exchangeDoctorCode, createDoctorClient, setDoctorClient } from '@/app/lib/google';
+import { exchangeDoctorCode, createDoctorClient, setDoctorClient, createCalendarClient } from '@/app/lib/google';
 import { logAudit } from '@/app/lib/audit';
 import { logger } from '@/app/lib/logger';
 
@@ -58,7 +57,8 @@ export async function GET(req: NextRequest) {
       const client = createDoctorClient(tokens.access_token, refreshToken, expires ?? undefined);
       setDoctorClient(doctorId, client);
 
-      const res = await googleApis.calendar({ version: 'v3', auth: client }).calendarList.list();
+      const cc = createCalendarClient(client);
+      const res = await cc.calendarList.list();
       const primary = res.data.items?.find((c) => c.primary) ?? res.data.items?.[0];
       if (primary?.id) {
         await prisma.doctor.update({

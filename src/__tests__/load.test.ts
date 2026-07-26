@@ -14,11 +14,25 @@ const googleMock = vi.hoisted(() => ({
 }));
 
 vi.mock('@/app/lib/google', () => ({
-  google: { events: googleMock.events, channels: googleMock.channels },
+  getGoogleCalendar: vi.fn(() => ({
+    events: googleMock.events,
+    channels: googleMock.channels,
+    freebusy: { query: vi.fn() },
+    calendarList: { list: vi.fn().mockResolvedValue({ data: { items: [] } }) },
+  })),
+  createCalendarClient: vi.fn(() => ({
+    events: googleMock.events,
+    channels: googleMock.channels,
+    freebusy: { query: vi.fn() },
+    calendarList: { list: vi.fn().mockResolvedValue({ data: { items: [] } }) },
+  })),
   getAuthUrl: vi.fn().mockReturnValue('http://auth.url'),
   exchangeCode: vi.fn().mockResolvedValue({ access_token: 'mock-token' }),
+  getDoctorAuthUrl: vi.fn().mockReturnValue('http://doctor-auth.url'),
+  exchangeDoctorCode: vi.fn().mockResolvedValue({ tokens: { access_token: 'mock-token' }, client: {} }),
   createDoctorClient: vi.fn(),
   setDoctorClient: vi.fn(),
+  getDoctorClient: vi.fn(),
   removeDoctorClient: vi.fn(),
   getDoctorCalendar: vi.fn(),
 }));

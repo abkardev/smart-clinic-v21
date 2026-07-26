@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
 import { getAuthUser, requireRole } from '@/app/lib/auth';
 import { logAudit, auditOptsFromRequest, AuditAction } from '@/app/lib/audit';
+import { logger } from '@/app/lib/logger';
 
 // DELETE /api/holidays/[id]
 export async function DELETE(
@@ -21,6 +22,7 @@ export async function DELETE(
     await logAudit(AuditAction.HOLIDAY_DELETED, 'Holiday', id, null, auditOptsFromRequest(req, user!));
     return NextResponse.json({ message: 'Holiday deleted' });
   } catch (err: unknown) {
+    logger.error('Holiday delete error', { error: String(err) });
     const e = err as { code?: string };
     if (e.code === 'P2025') return NextResponse.json({ message: 'Holiday not found' }, { status: 404 });
     return NextResponse.json({ message: 'Server error' }, { status: 500 });

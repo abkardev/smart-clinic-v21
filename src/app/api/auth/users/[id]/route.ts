@@ -19,7 +19,7 @@ export async function DELETE(
   const { id } = await params;
 
   try {
-    const target = await prisma.user.findUnique({ where: { id } });
+    const target = await prisma.user.findUnique({ where: { id }, select: { email: true } });
     if (!target) return NextResponse.json({ message: 'User not found' }, { status: 404 });
 
     await prisma.user.delete({ where: { id } });

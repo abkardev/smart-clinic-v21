@@ -2,14 +2,16 @@ import { prisma } from './prisma';
 import { logger } from './logger';
 import type { Doctor } from '@prisma/client';
 
-function toMinutes(t: string): number {
+export function toMinutes(t: string): number {
   const [h, m] = t.split(':').map(Number);
   return h * 60 + m;
 }
 
-function pad(n: number): string {
+export function pad(n: number): string {
   return String(n).padStart(2, '0');
 }
+
+export function timeToString(m: number): string { return `${pad(Math.floor(m / 60))}:${pad(m % 60)}`; }
 
 interface BreakConfig {
   enabled: boolean;
@@ -118,6 +120,7 @@ export async function getAvailableSlots(doctor: Doctor, date: string): Promise<S
           { doctors: { some: { doctorId: doctor.id } } },
         ],
       },
+      select: { nameEn: true },
     }),
     prisma.holiday.findFirst({
       where: {
@@ -128,6 +131,7 @@ export async function getAvailableSlots(doctor: Doctor, date: string): Promise<S
           { doctors: { some: { doctorId: doctor.id } } },
         ],
       },
+      select: { nameEn: true },
     }),
   ]);
 
@@ -159,6 +163,7 @@ export async function getAvailableSlots(doctor: Doctor, date: string): Promise<S
     }),
     prisma.blockedSlot.findMany({
       where: { doctorId: doctor.id, date },
+      select: { isWholeDay: true, time: true },
     }),
   ]);
 

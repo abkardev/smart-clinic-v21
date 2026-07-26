@@ -4,8 +4,8 @@ import { getAuthUser } from '@/app/lib/auth';
 import { logger } from '@/app/lib/logger';
 
 export async function GET(req: NextRequest) {
-  const user = await getAuthUser(req);
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const { error } = await getAuthUser(req);
+  if (error) return error;
 
   try {
     const result = await getObservability();

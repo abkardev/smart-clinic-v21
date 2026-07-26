@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from './prisma';
 import { logger } from './logger';
@@ -7,15 +8,28 @@ import { required } from './env';
 
 let _jwtSecret: string | undefined;
 
+const WEAK_SECRETS = [
+  'smartclinic_jwt_secret_change_in_prod',
+  'change_me',
+  'secret',
+  'jwt_secret',
+  'your_jwt_secret_here',
+];
+
 function getJwtSecret(): string {
   if (!_jwtSecret) {
-    _jwtSecret = required('JWT_SECRET');
+    const secret = required('JWT_SECRET');
+    if (secret.length < 32 || WEAK_SECRETS.includes(secret.toLowerCase())) {
+      logger.error('JWT_SECRET is weak — generate a strong secret with: openssl rand -hex 64');
+    }
+    _jwtSecret = secret;
   }
   return _jwtSecret;
 }
 
 export function signToken(userId: string): string {
-  return jwt.sign({ id: userId }, getJwtSecret(), { expiresIn: '7d' });
+  const jti = crypto.randomUUID();
+  return jwt.sign({ id: userId, jti }, getJwtSecret(), { expiresIn: '7d' });
 }
 
 function isIdPayload(obj: unknown): obj is { id: string } {

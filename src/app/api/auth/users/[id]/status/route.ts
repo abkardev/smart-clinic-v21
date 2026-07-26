@@ -21,7 +21,7 @@ export async function PATCH(
 
   try {
     const { status } = await req.json() as { status: UserStatus };
-    const target = await prisma.user.findUnique({ where: { id } });
+    const target = await prisma.user.findUnique({ where: { id }, select: { role: true, email: true } });
     if (!target) return NextResponse.json({ message: 'User not found' }, { status: 404 });
 
     if (target.role === 'superadmin' && user!.role !== 'superadmin') {

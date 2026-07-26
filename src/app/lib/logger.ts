@@ -5,11 +5,19 @@ function isValidLevel(s: string): s is Level {
   return s in LOG_LEVELS;
 }
 
-const currentLevel: Level = (() => {
-  const envLevel = process.env.LOG_LEVEL;
-  if (envLevel && isValidLevel(envLevel)) return envLevel;
-  return process.env.NODE_ENV === 'production' ? 'info' : 'debug';
-})();
+let _currentLevel: Level | undefined;
+
+function getCurrentLevel(): Level {
+  if (!_currentLevel) {
+    const envLevel = process.env.LOG_LEVEL;
+    if (envLevel && isValidLevel(envLevel)) {
+      _currentLevel = envLevel;
+    } else {
+      _currentLevel = process.env.NODE_ENV === 'production' ? 'info' : 'debug';
+    }
+  }
+  return _currentLevel;
+}
 
 interface LogMeta {
   [key: string]: unknown;
@@ -25,7 +33,7 @@ interface LogMeta {
 }
 
 function shouldLog(level: Level): boolean {
-  return LOG_LEVELS[level] >= LOG_LEVELS[currentLevel];
+  return LOG_LEVELS[level] >= LOG_LEVELS[getCurrentLevel()];
 }
 
 function fmt(level: Level, msg: string, meta?: LogMeta) {

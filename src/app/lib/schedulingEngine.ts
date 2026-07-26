@@ -2,13 +2,10 @@ import { prisma } from './prisma';
 import { logger } from './logger';
 import { logAudit } from './audit';
 
-import { getAvailableSlots, generateTimeSlots } from './availability';
+import { getAvailableSlots, generateTimeSlots, toMinutes, pad, timeToString } from './availability';
 import { syncBooking } from './googleCalendar';
 import type { Doctor } from '@prisma/client';
 
-function toMinutes(t: string): number { const [h, m] = t.split(':').map(Number); return h * 60 + m; }
-function pad(n: number): string { return String(n).padStart(2, '0'); }
-function timeToString(m: number): string { return `${pad(Math.floor(m / 60))}:${pad(m % 60)}`; }
 function addMinutes(t: string, m: number): string { return timeToString(toMinutes(t) + m); }
 
 // ─── Phase 2: Buffer Management ────────────────────────────────────────────────

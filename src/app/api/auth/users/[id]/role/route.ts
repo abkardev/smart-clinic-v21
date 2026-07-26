@@ -26,7 +26,7 @@ export async function PATCH(
       return NextResponse.json({ message: 'Invalid role' }, { status: 400 });
     }
 
-    const target = await prisma.user.findUnique({ where: { id } });
+    const target = await prisma.user.findUnique({ where: { id }, select: { role: true, email: true } });
     if (!target) return NextResponse.json({ message: 'User not found' }, { status: 404 });
 
     if ((role === 'superadmin' || target.role === 'superadmin') && user!.role !== 'superadmin') {
