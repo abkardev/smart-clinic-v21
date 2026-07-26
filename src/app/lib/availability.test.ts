@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   generateTimeSlots, DayStatus, findNearestAppointment,
-  BOOKING_WINDOW_DAYS, filterTodaySlots, CLINIC_TIMEZONE,
-  BOOKING_BUFFER_MINUTES, MINIMUM_ADVANCE_BOOKING_HOURS, getClinicNow,
+  getBookingWindowDays, filterTodaySlots, getClinicTimezone,
+  getBookingBufferMinutes, getMinimumAdvanceHours, getClinicNow,
 } from './availability';
 
 // ─── generateTimeSlots ────────────────────────────────────────────────────────
@@ -355,14 +355,14 @@ describe('Translation separation', () => {
 });
 
 // ─── Booking window configuration ────────────────────────────────────────────
-describe('BOOKING_WINDOW_DAYS', () => {
+describe('getBookingWindowDays', () => {
   it('defaults to 14 when no env var set', () => {
-    expect(BOOKING_WINDOW_DAYS).toBe(14);
+    expect(getBookingWindowDays()).toBe(14);
   });
 
   it('is within supported values [7, 14, 21, 30, 60]', () => {
     const supported = [7, 14, 21, 30, 60];
-    expect(supported).toContain(BOOKING_WINDOW_DAYS);
+    expect(supported).toContain(getBookingWindowDays());
   });
 });
 
@@ -550,16 +550,16 @@ describe('getClinicNow', () => {
 
 // ─── Configuration defaults ──────────────────────────────────────────────────
 describe('Configuration defaults', () => {
-  it('CLINIC_TIMEZONE defaults to Asia/Riyadh', () => {
-    expect(CLINIC_TIMEZONE).toBe('Asia/Riyadh');
+  it('getClinicTimezone defaults to Asia/Riyadh', () => {
+    expect(getClinicTimezone()).toBe('Asia/Riyadh');
   });
 
-  it('BOOKING_BUFFER_MINUTES defaults to 0', () => {
-    expect(BOOKING_BUFFER_MINUTES).toBe(0);
+  it('getBookingBufferMinutes defaults to 0', () => {
+    expect(getBookingBufferMinutes()).toBe(0);
   });
 
-  it('MINIMUM_ADVANCE_BOOKING_HOURS defaults to 3', () => {
-    expect(MINIMUM_ADVANCE_BOOKING_HOURS).toBe(3);
+  it('getMinimumAdvanceHours defaults to 3', () => {
+    expect(getMinimumAdvanceHours()).toBe(3);
   });
 });
 

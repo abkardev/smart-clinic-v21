@@ -32,8 +32,8 @@ export async function DELETE(
     // Remove from Google Calendar if synced
     if (slot.syncedToGoogle && slot.googleEventId && slot.doctor) {
       try {
-        const { google } = await import('@/app/lib/google');
-        await google.events.delete({
+        const { getGoogleCalendar } = await import('@/app/lib/google');
+        await getGoogleCalendar().events.delete({
           calendarId: slot.doctor.calendarId,
           eventId: slot.googleEventId,
         });

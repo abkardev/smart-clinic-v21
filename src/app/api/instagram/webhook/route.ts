@@ -14,23 +14,25 @@ import { metrics } from '@/app/lib/metrics';
 import { required } from '@/app/lib/env';
 import { META_LIMITS, igQuickReplyTitle, parseMetaError, type MetaErrorInfo } from '@/app/lib/metaValidation';
 
-const INSTAGRAM_TOKEN = required('INSTAGRAM_TOKEN');
+function getInstagramToken(): string {
+  return required('INSTAGRAM_TOKEN');
+}
 
 function logTokenDiagnostic(): void {
-  const prefix = INSTAGRAM_TOKEN.length >= 3 ? INSTAGRAM_TOKEN.slice(0, 3) : '???';
+  const token = getInstagramToken();
+  const prefix = token.length >= 3 ? token.slice(0, 3) : '???';
   logger.info('[Instagram] Token diagnostic', {
-    length: INSTAGRAM_TOKEN.length,
+    length: token.length,
     prefix,
     looksLikePageToken: prefix === 'EAA',
     looksLikeIgToken: prefix === 'IGQ',
-    isEmpty: INSTAGRAM_TOKEN.length === 0,
+    isEmpty: token.length === 0,
   });
 }
-logTokenDiagnostic();
 
 const IG_URL = () => `https://graph.facebook.com/v21.0/me/messages`;
 const IG_HEADERS = () => ({
-  Authorization: `Bearer ${INSTAGRAM_TOKEN}`,
+  Authorization: `Bearer ${getInstagramToken()}`,
   'Content-Type': 'application/json',
 });
 

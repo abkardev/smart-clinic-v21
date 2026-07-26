@@ -24,7 +24,9 @@ export interface OfferCard {
   code?: string | null;
 }
 
-export const OFFERS_PAGE_SIZE = parseInt(process.env.OFFERS_PAGE_SIZE || '5', 10);
+export function getOffersPageSize(): number {
+  return parseInt(process.env.OFFERS_PAGE_SIZE || '5', 10);
+}
 
 const SUPPORTED_IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp)$/i;
 
@@ -113,7 +115,7 @@ export async function presentOffers(
     return 'offers';
   }
 
-  const pageSize = OFFERS_PAGE_SIZE;
+  const pageSize = getOffersPageSize();
   const totalPages = Math.ceil(offers.length / pageSize);
   const currentPage = Math.max(1, Math.min(page, totalPages));
   const startIdx = (currentPage - 1) * pageSize;

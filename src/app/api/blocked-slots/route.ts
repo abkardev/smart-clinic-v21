@@ -70,13 +70,13 @@ export async function POST(req: NextRequest) {
 
     // Optionally sync to Google Calendar
     try {
-      const { google } = await import('@/app/lib/google');
+      const { getGoogleCalendar } = await import('@/app/lib/google');
       const startDT = new Date(`${date}T${isWholeDay ? '00:00' : time}:00`);
       const endDT = isWholeDay
         ? new Date(`${date}T23:59:59`)
         : new Date(startDT.getTime() + 30 * 60000);
 
-      const event = await google.events.insert({
+      const event = await getGoogleCalendar().events.insert({
         calendarId: doctor.calendarId,
         requestBody: {
           summary: `🚫 ${reason || 'Unavailable'}`,

@@ -2,22 +2,34 @@ import { google as googleApis } from 'googleapis';
 
 export type OAuth2Client = InstanceType<typeof googleApis.auth.OAuth2>;
 
-const auth = new googleApis.auth.OAuth2(
-  process.env.GOOGLE_CLIENT_ID,
-  process.env.GOOGLE_CLIENT_SECRET,
-  process.env.GOOGLE_REDIRECT_URI
-);
+let _auth: OAuth2Client | undefined;
+let _calendar: ReturnType<typeof googleApis.calendar> | undefined;
 
-auth.setCredentials({
-  refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
-});
+function getAuth(): OAuth2Client {
+  if (!_auth) {
+    _auth = new googleApis.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      process.env.GOOGLE_REDIRECT_URI,
+    );
+    _auth.setCredentials({
+      refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
+    });
+  }
+  return _auth;
+}
 
-export const google = googleApis.calendar({ version: 'v3', auth });
+export function getGoogleCalendar() {
+  if (!_calendar) {
+    _calendar = googleApis.calendar({ version: 'v3', auth: getAuth() });
+  }
+  return _calendar;
+}
 
 const doctorClients = new Map<string, OAuth2Client>();
 
 export function getAuthUrl(): string {
-  return auth.generateAuthUrl({
+  return getAuth().generateAuthUrl({
     access_type: 'offline',
     scope: ['https://www.googleapis.com/auth/calendar'],
     prompt: 'consent',
@@ -25,7 +37,7 @@ export function getAuthUrl(): string {
 }
 
 export async function exchangeCode(code: string) {
-  const { tokens } = await auth.getToken(code);
+  const { tokens } = await getAuth().getToken(code);
   return tokens;
 }
 

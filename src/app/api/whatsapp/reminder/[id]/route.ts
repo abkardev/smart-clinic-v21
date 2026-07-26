@@ -8,12 +8,17 @@ import { logger } from '@/app/lib/logger';
 import { MSG } from '@/app/lib/botMessages';
 import { required } from '@/app/lib/env';
 
-const WHATSAPP_TOKEN = required('WHATSAPP_TOKEN');
-const WHATSAPP_PHONE_ID = required('WHATSAPP_PHONE_ID');
+function getWhatsAppToken(): string {
+  return required('WHATSAPP_TOKEN');
+}
 
-const WA_URL = () => `https://graph.facebook.com/v18.0/${WHATSAPP_PHONE_ID}/messages`;
+function getWhatsAppPhoneId(): string {
+  return required('WHATSAPP_PHONE_ID');
+}
+
+const WA_URL = () => `https://graph.facebook.com/v18.0/${getWhatsAppPhoneId()}/messages`;
 const WA_HEADERS = () => ({
-  Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+  Authorization: `Bearer ${getWhatsAppToken()}`,
   'Content-Type': 'application/json',
 });
 

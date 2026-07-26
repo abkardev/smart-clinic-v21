@@ -69,19 +69,21 @@ export function formatTimeForEn(time: string): string {
 // `googleapis` package and attempted a network call on every single
 // availability check, even with no credentials set — adding seconds of
 // latency to every booking page load and every bot interaction.
-const GOOGLE_CONFIGURED = Boolean(
-  process.env.GOOGLE_CLIENT_ID &&
-  process.env.GOOGLE_CLIENT_SECRET &&
-  process.env.GOOGLE_REFRESH_TOKEN
-);
+function isGoogleConfigured(): boolean {
+  return Boolean(
+    process.env.GOOGLE_CLIENT_ID &&
+    process.env.GOOGLE_CLIENT_SECRET &&
+    process.env.GOOGLE_REFRESH_TOKEN,
+  );
+}
 
 async function getGoogleBusySlots(calendarId: string, date: string): Promise<{ start: string; end: string }[]> {
-  if (!GOOGLE_CONFIGURED) return [];
+  if (!isGoogleConfigured()) return [];
   try {
-    const { google } = await import('./google');
+    const { getGoogleCalendar } = await import('./google');
     const timeMin = new Date(`${date}T00:00:00`).toISOString();
     const timeMax = new Date(`${date}T23:59:59`).toISOString();
-    const response = await google.freebusy.query({
+    const response = await getGoogleCalendar().freebusy.query({
       requestBody: { timeMin, timeMax, items: [{ id: calendarId }] },
     });
     return (response.data.calendars?.[calendarId]?.busy ?? []) as { start: string; end: string }[];
@@ -172,10 +174,10 @@ export async function getAvailableSlots(doctor: Doctor, date: string): Promise<S
 
   // ── Time-sensitive filters (today only) ──────────────────────────────────
   // Uses clinic timezone for all calculations — never relies on server time.
-  const clinicNow = getClinicNow(CLINIC_TIMEZONE);
+  const clinicNow = getClinicNow(getClinicTimezone());
   const isToday = date === clinicNow.date;
   const todayFiltered = isToday
-    ? new Set(filterTodaySlots(allSlots, clinicNow.minutes, BOOKING_BUFFER_MINUTES, MINIMUM_ADVANCE_BOOKING_HOURS))
+    ? new Set(filterTodaySlots(allSlots, clinicNow.minutes, getBookingBufferMinutes(), getMinimumAdvanceHours()))
     : null;
 
   const googleBusy = await getGoogleBusySlots(doctor.calendarId, date);
@@ -231,7 +233,7 @@ export async function suggestAlternativeDates(
 
 const SUPPORTED_WINDOWS = [7, 14, 21, 30, 60];
 
-function parseBookingWindow(): number {
+export function getBookingWindowDays(): number {
   const raw = process.env.BOOKING_WINDOW_DAYS;
   if (raw) {
     const n = parseInt(raw, 10);
@@ -240,13 +242,13 @@ function parseBookingWindow(): number {
   return 14;
 }
 
-export const BOOKING_WINDOW_DAYS = parseBookingWindow();
-
 // ─── Clinic timezone ─────────────────────────────────────────────────────────
-export const CLINIC_TIMEZONE = process.env.CLINIC_TIMEZONE || 'Asia/Riyadh';
+export function getClinicTimezone(): string {
+  return process.env.CLINIC_TIMEZONE || 'Asia/Riyadh';
+}
 
 // ─── Booking buffer (minutes) ────────────────────────────────────────────────
-function parseBookingBuffer(): number {
+export function getBookingBufferMinutes(): number {
   const raw = process.env.BOOKING_BUFFER_MINUTES;
   if (raw) {
     const n = parseInt(raw, 10);
@@ -254,10 +256,9 @@ function parseBookingBuffer(): number {
   }
   return 0;
 }
-export const BOOKING_BUFFER_MINUTES = parseBookingBuffer();
 
 // ─── Minimum advance booking hours ───────────────────────────────────────────
-function parseMinimumAdvance(): number {
+export function getMinimumAdvanceHours(): number {
   const raw = process.env.MINIMUM_ADVANCE_BOOKING_HOURS;
   if (raw) {
     const n = parseInt(raw, 10);
@@ -265,11 +266,10 @@ function parseMinimumAdvance(): number {
   }
   return 3;
 }
-export const MINIMUM_ADVANCE_BOOKING_HOURS = parseMinimumAdvance();
 
 // ─── Clinic timezone-aware current time ─────────────────────────────────────
 export function getClinicNow(tz?: string): { date: string; minutes: number } {
-  const timezone = tz || CLINIC_TIMEZONE;
+  const timezone = tz || getClinicTimezone();
   const nowStr = new Date().toLocaleString('sv-SE', { timeZone: timezone });
   const [date, time] = nowStr.split(' ');
   const [h, m] = time.split(':').map(Number);
@@ -347,9 +347,9 @@ export function findNearestAppointment(days: UpcomingDay[]): NearestAppointment 
  */
 export async function listUpcomingDays(
   doctor: Doctor,
-  daysAhead = BOOKING_WINDOW_DAYS
+  daysAhead = getBookingWindowDays()
 ): Promise<UpcomingDay[]> {
-  const clinicNow = getClinicNow(CLINIC_TIMEZONE);
+  const clinicNow = getClinicNow(getClinicTimezone());
   const todayLocal = clinicNow.date;
   const tomorrowLocal = addDays(todayLocal, 1);
 

@@ -2,7 +2,7 @@ import { prisma } from './prisma';
 import { logger } from './logger';
 import { logAudit } from './audit';
 import { metrics } from './metrics';
-import { google } from './google';
+import { getGoogleCalendar } from './google';
 import { getQuotaUsage } from './quotaManager';
 import { getChannelHealth } from './channelScheduler';
 import { getTokenHealth, getDoctorOAuthStatus, refreshDoctorToken } from './oauthLifecycle';
@@ -257,7 +257,7 @@ export async function verifyBooking(bookingId: string, requestId: string) {
 
   if (booking.calendarEventId) {
     try {
-      const res = await google.events.get({
+      const res = await getGoogleCalendar().events.get({
         calendarId: doctor.calendarId,
         eventId: booking.calendarEventId,
       });
@@ -379,7 +379,7 @@ export async function getConflicts(params: { doctorId?: string; type?: string; p
       const doctor = await prisma.doctor.findUnique({ where: { id: b.doctorId } });
       if (!doctor) continue;
       try {
-        await google.events.get({ calendarId: doctor.calendarId, eventId: b.calendarEventId! });
+        await getGoogleCalendar().events.get({ calendarId: doctor.calendarId, eventId: b.calendarEventId! });
       } catch {
         conflicts.push({
           type: 'missing_event',
@@ -681,7 +681,7 @@ export async function cleanup(type: string, dryRun: boolean, requestId: string):
 
     for (const doctor of doctors) {
       try {
-        const res = await google.events.list({
+        const res = await getGoogleCalendar().events.list({
           calendarId: doctor.calendarId,
           timeMin: new Date(Date.now() - 7 * 86400000).toISOString(),
           maxResults: 250,
@@ -696,7 +696,7 @@ export async function cleanup(type: string, dryRun: boolean, requestId: string):
             toDelete++;
             if (!dryRun) {
               try {
-                await google.events.delete({ calendarId: doctor.calendarId, eventId });
+                await getGoogleCalendar().events.delete({ calendarId: doctor.calendarId, eventId });
               } catch {
                 // skip
               }
@@ -730,7 +730,7 @@ export async function cleanup(type: string, dryRun: boolean, requestId: string):
     if (!dryRun) {
       for (const ch of channels) {
         try {
-          await google.channels.stop({ requestBody: { id: ch.channelId, resourceId: ch.resourceId } });
+          await getGoogleCalendar().channels.stop({ requestBody: { id: ch.channelId, resourceId: ch.resourceId } });
         } catch {
           // skip
         }

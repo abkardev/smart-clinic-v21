@@ -2,11 +2,12 @@ import { prisma } from './prisma';
 import { logger } from './logger';
 import { logAudit } from './audit';
 import type { Doctor } from '@prisma/client';
-import { google } from './google';
+import { getGoogleCalendar } from './google';
 
-const WEBHOOK_URL = process.env.NEXT_PUBLIC_APP_URL
-  ? `${process.env.NEXT_PUBLIC_APP_URL}/api/google/webhook`
-  : null;
+function getWebhookUrl(): string | null {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+  return appUrl ? `${appUrl}/api/google/webhook` : null;
+}
 
 const CHANNEL_TTL_SECONDS = 604800;
 
@@ -15,7 +16,8 @@ function getChannelId(doctorId: string): string {
 }
 
 export async function watchCalendar(doctor: Doctor): Promise<boolean> {
-  if (!WEBHOOK_URL) {
+  const webhookUrl = getWebhookUrl();
+  if (!webhookUrl) {
     logger.warn('Cannot watch calendar — NEXT_PUBLIC_APP_URL not set');
     return false;
   }
@@ -24,12 +26,12 @@ export async function watchCalendar(doctor: Doctor): Promise<boolean> {
     const channelId = getChannelId(doctor.id);
     const expiration = Date.now() + CHANNEL_TTL_SECONDS * 1000;
 
-    const res = await google.events.watch({
+    const res = await getGoogleCalendar().events.watch({
       calendarId: doctor.calendarId,
       requestBody: {
         id: channelId,
         type: 'web_hook',
-        address: WEBHOOK_URL,
+        address: webhookUrl,
         expiration: String(expiration),
         token: doctor.id,
       },
@@ -64,7 +66,7 @@ export async function watchCalendar(doctor: Doctor): Promise<boolean> {
 
 export async function stopChannel(channelId: string, resourceId: string): Promise<boolean> {
   try {
-    await google.channels.stop({
+    await getGoogleCalendar().channels.stop({
       requestBody: { id: channelId, resourceId },
     });
 

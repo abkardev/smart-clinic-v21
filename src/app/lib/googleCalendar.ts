@@ -1,4 +1,4 @@
-import { google } from './google';
+import { getGoogleCalendar } from './google';
 import { prisma } from './prisma';
 import { logger } from './logger';
 import { logAudit, AuditAction, AuditOptions } from './audit';
@@ -109,7 +109,7 @@ export async function fetchDoctorEvents(
       params.timeMax = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
     }
 
-    const res = await google.events.list(params);
+    const res = await getGoogleCalendar().events.list(params);
     const nextSyncToken = res.data.nextSyncToken ?? undefined;
     return { events: (res.data.items ?? []) as Record<string, unknown>[], nextSyncToken };
   } catch (err) {
@@ -208,7 +208,7 @@ export async function createCalendarEvent(
   doctor: Doctor
 ): Promise<CalendarResult | null> {
   const start = Date.now();
-  const event = await google.events.insert({
+    const event = await getGoogleCalendar().events.insert({
     calendarId: doctor.calendarId,
     requestBody: buildEventBody(booking, doctor),
   });
@@ -226,7 +226,7 @@ export async function updateCalendarEvent(
 ): Promise<void> {
   if (!booking.calendarEventId) return;
   const start = Date.now();
-  await google.events.update({
+  await getGoogleCalendar().events.update({
     calendarId: doctor.calendarId,
     eventId: booking.calendarEventId,
     requestBody: buildEventBody(booking, doctor),
@@ -239,7 +239,7 @@ export async function deleteCalendarEvent(
   eventId: string
 ): Promise<void> {
   try {
-    await google.events.delete({ calendarId, eventId });
+    await getGoogleCalendar().events.delete({ calendarId, eventId });
   } catch (err) {
     if ((err as { code?: number }).code === 404) return;
     throw err;

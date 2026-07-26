@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/app/lib/prisma';
 import { logger } from '@/app/lib/logger';
 import { logAudit } from '@/app/lib/audit';
-import { google } from '@/app/lib/google';
+import { getGoogleCalendar } from '@/app/lib/google';
 
 async function processSync(doctorId: string): Promise<void> {
   const syncState = await prisma.calendarSyncState.findUnique({ where: { doctorId } });
@@ -21,7 +21,7 @@ async function processSync(doctorId: string): Promise<void> {
   }
 
   try {
-    const response = await google.events.list(listParams);
+    const response = await getGoogleCalendar().events.list(listParams);
     const events = response.data.items ?? [];
     const nextSyncToken = response.data.nextSyncToken;
 

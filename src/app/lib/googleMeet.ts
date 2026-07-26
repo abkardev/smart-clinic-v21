@@ -1,4 +1,4 @@
-import { google } from './google';
+import { getGoogleCalendar } from './google';
 import { logger } from './logger';
 import { logAudit } from './audit';
 
@@ -39,7 +39,7 @@ export async function addMeetToEvent(
   bookingId: string,
 ): Promise<string | null> {
   try {
-    const patchRes = await google.events.patch({
+    const patchRes = await getGoogleCalendar().events.patch({
       calendarId,
       eventId,
       requestBody: {

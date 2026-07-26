@@ -1,16 +1,17 @@
 import { v2 as cloudinary } from 'cloudinary';
 import { logger } from './logger';
 
-const CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME;
-const CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY;
-const CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET;
-
-if (CLOUDINARY_CLOUD_NAME && CLOUDINARY_API_KEY && CLOUDINARY_API_SECRET) {
-  cloudinary.config({
-    cloud_name: CLOUDINARY_CLOUD_NAME,
-    api_key: CLOUDINARY_API_KEY,
-    api_secret: CLOUDINARY_API_SECRET,
-  });
+function ensureCloudinaryConfigured(): void {
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+  const apiKey = process.env.CLOUDINARY_API_KEY;
+  const apiSecret = process.env.CLOUDINARY_API_SECRET;
+  if (cloudName && apiKey && apiSecret) {
+    cloudinary.config({
+      cloud_name: cloudName,
+      api_key: apiKey,
+      api_secret: apiSecret,
+    });
+  }
 }
 
 export interface UploadResult {
@@ -61,6 +62,7 @@ export function extractPublicId(imageUrl: string | null | undefined): string | n
 }
 
 export async function uploadImage(base64DataUrl: string, folder: string): Promise<UploadResult> {
+  ensureCloudinaryConfigured();
   validateImage(base64DataUrl);
   const ext = extractExtension(base64DataUrl);
   const base64Content = base64DataUrl.split(',')[1];

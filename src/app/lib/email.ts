@@ -1,31 +1,37 @@
 import { Resend } from 'resend';
 import { logger } from './logger';
 
-const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const EMAIL_FROM = process.env.EMAIL_FROM;
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-
-function validateConfig(): void {
-  if (!RESEND_API_KEY) {
+function getResendApiKey(): string {
+  const key = process.env.RESEND_API_KEY;
+  if (!key) {
     throw new Error(
       'Missing RESEND_API_KEY environment variable.\n' +
       'Set it in .env.local or your Vercel project environment variables.',
     );
   }
-  if (!EMAIL_FROM) {
+  return key;
+}
+
+function getEmailFrom(): string {
+  const from = process.env.EMAIL_FROM;
+  if (!from) {
     throw new Error(
       'Missing EMAIL_FROM environment variable.\n' +
       'Set it to the verified sender email in your Resend account.',
     );
   }
+  return from;
+}
+
+function getAppUrl(): string {
+  return process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 }
 
 let _resend: Resend | null = null;
 
 function getResend(): Resend {
   if (!_resend) {
-    validateConfig();
-    _resend = new Resend(RESEND_API_KEY);
+    _resend = new Resend(getResendApiKey());
   }
   return _resend;
 }
@@ -177,11 +183,6 @@ export async function sendAppointmentReminderEmail(
   service: string,
   lang: string,
 ): Promise<void> {
-  if (!RESEND_API_KEY || !EMAIL_FROM) {
-    logger.error('[Email] Invalid configuration — RESEND_API_KEY or EMAIL_FROM not set');
-    throw new Error('Email service is not configured');
-  }
-
   const resend = getResend();
   const subject = lang === 'ar'
     ? `تذكير بالموعد — ${date} ${time} — SmartClinic`
@@ -189,7 +190,7 @@ export async function sendAppointmentReminderEmail(
 
   try {
     const { error } = await resend.emails.send({
-      from: EMAIL_FROM,
+      from: getEmailFrom(),
       to: email,
       subject,
       html: buildReminderEmailHtml(patientName, doctorName, service, date, time, lang),
@@ -223,18 +224,13 @@ export async function sendPasswordResetEmail(
   token: string,
   lang: string,
 ): Promise<void> {
-  const resetUrl = `${APP_URL}/reset-password/${token}`;
-
-  if (!RESEND_API_KEY || !EMAIL_FROM) {
-    logger.error('[Email] Invalid configuration — RESEND_API_KEY or EMAIL_FROM not set');
-    throw new Error('Email service is not configured');
-  }
+  const resetUrl = `${getAppUrl()}/reset-password/${token}`;
 
   const resend = getResend();
 
   try {
     const { error } = await resend.emails.send({
-      from: EMAIL_FROM,
+      from: getEmailFrom(),
       to: email,
       subject: lang === 'ar' ? 'إعادة تعيين كلمة المرور — SmartClinic' : 'Reset Your Password — SmartClinic',
       html: buildResetEmailHtml(name, resetUrl, lang),

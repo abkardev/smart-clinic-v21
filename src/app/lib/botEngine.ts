@@ -1,5 +1,5 @@
 import { prisma } from './prisma';
-import { getAvailableSlots, listUpcomingDays, formatTimeForAr, formatTimeForEn, DayStatus, findNearestAppointment, BOOKING_WINDOW_DAYS } from './availability';
+import { getAvailableSlots, listUpcomingDays, formatTimeForAr, formatTimeForEn, DayStatus, findNearestAppointment, getBookingWindowDays } from './availability';
 import {
   MSG, CALL_TIMES, SERVICES_BILINGUAL, TRIGGERS,
   BookingData, STEP_ORDER, NAVIGATION_IDS, EDIT_FIELD_MAP,
@@ -39,7 +39,9 @@ export interface MessageHandler {
 const SESSION_TTL_MS = 30 * 60 * 1000;
 const PATIENT_NAME_RE = /^[\p{L}]+(?:[ '\-][\p{L}]+)*$/u;
 const FALLBACK_TTL_MS = 10 * 60 * 1000;
-const FF_EDIT_FLOW_FIX = process.env.FF_EDIT_FLOW_FIX === 'true';
+function getEditFlowFix(): boolean {
+  return process.env.FF_EDIT_FLOW_FIX === 'true';
+}
 
 export async function registerFallbackRows(userId: string, rows: Array<{ id: string }>): Promise<void> {
   if (rows.length === 0) return;
@@ -197,7 +199,7 @@ async function sendDatePicker(userId: string, data: BookingData, adapter: BotAda
   if (!doc) return adapter.sendText(userId, MSG.error);
 
   // Single availability pass — reused for both nearest appointment and list
-  const days = await listUpcomingDays(doc, BOOKING_WINDOW_DAYS);
+  const days = await listUpcomingDays(doc, getBookingWindowDays());
   const visibleDays = days.filter(d => d.status !== DayStatus.NOT_WORKING_DAY);
   if (!visibleDays.length) return adapter.sendText(userId, MSG.noUpcomingAvailability);
 
@@ -570,7 +572,7 @@ class SummaryHandler implements MessageHandler {
           if (targetStep) {
             data.editReturn = 'booking_summary';
             data.editField = input;
-            if (FF_EDIT_FLOW_FIX) {
+            if (getEditFlowFix()) {
               await resendStep(userId, targetStep, data, adapter, cid);
               return targetStep;
             } else {

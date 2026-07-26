@@ -5,10 +5,17 @@ import { prisma } from './prisma';
 import { logger } from './logger';
 import { required } from './env';
 
-const JWT_SECRET = required('JWT_SECRET');
+let _jwtSecret: string | undefined;
+
+function getJwtSecret(): string {
+  if (!_jwtSecret) {
+    _jwtSecret = required('JWT_SECRET');
+  }
+  return _jwtSecret;
+}
 
 export function signToken(userId: string): string {
-  return jwt.sign({ id: userId }, JWT_SECRET, { expiresIn: '7d' });
+  return jwt.sign({ id: userId }, getJwtSecret(), { expiresIn: '7d' });
 }
 
 function isIdPayload(obj: unknown): obj is { id: string } {
@@ -21,7 +28,7 @@ function isIdPayload(obj: unknown): obj is { id: string } {
 }
 
 export function verifyToken(token: string): { id: string } {
-  const decoded = jwt.verify(token, JWT_SECRET);
+  const decoded = jwt.verify(token, getJwtSecret());
   if (typeof decoded === 'string') {
     return { id: decoded };
   }

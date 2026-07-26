@@ -1,7 +1,7 @@
 import { prisma } from './prisma';
 import { logger } from './logger';
 import { logAudit } from './audit';
-import { google } from './google';
+import { getGoogleCalendar } from './google';
 
 export interface DriftReport {
   doctorId: string;
@@ -101,7 +101,7 @@ async function checkDoctorDrift(doctor: {
 
   let googleEvents: Record<string, unknown>[] = [];
   try {
-    const res = await google.events.list({
+    const res = await getGoogleCalendar().events.list({
       calendarId: doctor.calendarId,
       timeMin: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
       timeMax: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),

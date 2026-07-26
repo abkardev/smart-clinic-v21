@@ -4,7 +4,7 @@ import {
   buildOfferCaption,
   sendOfferMediaCard,
   presentOffers,
-  OFFERS_PAGE_SIZE,
+  getOffersPageSize,
   BotAdapter,
   OfferCard,
 } from './offerPresentation';
@@ -268,14 +268,14 @@ describe('presentOffers', () => {
   it('includes Book Now and Next on first page with multiple pages', async () => {
     const adapter = createAdapter(true);
     const { prisma } = await import('./prisma');
-    const offers = Array.from({ length: OFFERS_PAGE_SIZE + 1 }, (_, i) =>
+    const offers = Array.from({ length: getOffersPageSize() + 1 }, (_, i) =>
       makeOffer({ id: `o${i + 1}`, titleAr: `عرض ${i + 1}`, titleEn: `Offer ${i + 1}`, imageUrl: 'https://example.com/img.jpg' }),
     );
     vi.mocked(prisma.offer.findMany).mockResolvedValueOnce(offers as any);
 
     await presentOffers(adapter, 'user-1', 1);
 
-    expect(mockSendMedia).toHaveBeenCalledTimes(OFFERS_PAGE_SIZE);
+    expect(mockSendMedia).toHaveBeenCalledTimes(getOffersPageSize());
     expect(mockSendList).toHaveBeenCalledTimes(1);
     const listCall = mockSendList.mock.calls[0];
     const sections = listCall[4];
@@ -290,7 +290,7 @@ describe('presentOffers', () => {
   it('includes Previous but not Next on last page', async () => {
     const adapter = createAdapter(true);
     const { prisma } = await import('./prisma');
-    const offers = Array.from({ length: OFFERS_PAGE_SIZE + 1 }, (_, i) =>
+    const offers = Array.from({ length: getOffersPageSize() + 1 }, (_, i) =>
       makeOffer({ id: `o${i + 1}`, titleAr: `عرض ${i + 1}`, titleEn: `Offer ${i + 1}`, imageUrl: 'https://example.com/img.jpg' }),
     );
     vi.mocked(prisma.offer.findMany).mockResolvedValueOnce(offers as any);
@@ -307,7 +307,7 @@ describe('presentOffers', () => {
   it('includes both Next and Previous on middle pages', async () => {
     const adapter = createAdapter(true);
     const { prisma } = await import('./prisma');
-    const offers = Array.from({ length: OFFERS_PAGE_SIZE * 3 }, (_, i) =>
+    const offers = Array.from({ length: getOffersPageSize() * 3 }, (_, i) =>
       makeOffer({ id: `o${i + 1}`, titleAr: `عرض ${i + 1}`, titleEn: `Offer ${i + 1}`, imageUrl: 'https://example.com/img.jpg' }),
     );
     vi.mocked(prisma.offer.findMany).mockResolvedValueOnce(offers as any);
@@ -337,15 +337,15 @@ describe('presentOffers', () => {
   it('offers are numbered globally across pages', async () => {
     const adapter = createAdapter(true);
     const { prisma } = await import('./prisma');
-    const offers = Array.from({ length: OFFERS_PAGE_SIZE * 2 + 1 }, (_, i) =>
+    const offers = Array.from({ length: getOffersPageSize() * 2 + 1 }, (_, i) =>
       makeOffer({ id: `o${i + 1}`, titleAr: `عرض ${i + 1}`, titleEn: `Offer ${i + 1}`, imageUrl: 'https://example.com/img.jpg' }),
     );
     vi.mocked(prisma.offer.findMany).mockResolvedValueOnce(offers as any);
 
     await presentOffers(adapter, 'user-1', 1);
-    expect(mockSendMedia).toHaveBeenCalledTimes(OFFERS_PAGE_SIZE);
+    expect(mockSendMedia).toHaveBeenCalledTimes(getOffersPageSize());
     expect(mockSendMedia).toHaveBeenNthCalledWith(1, 'user-1', 'image', 'https://example.com/img.jpg', expect.stringContaining('Offer #1'));
-    expect(mockSendMedia).toHaveBeenNthCalledWith(OFFERS_PAGE_SIZE, 'user-1', 'image', 'https://example.com/img.jpg', expect.stringContaining(`Offer #${OFFERS_PAGE_SIZE}`));
+    expect(mockSendMedia).toHaveBeenNthCalledWith(getOffersPageSize(), 'user-1', 'image', 'https://example.com/img.jpg', expect.stringContaining(`Offer #${getOffersPageSize()}`));
   });
 
   it('works without sendMedia on adapter (Instagram compat)', async () => {
