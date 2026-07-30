@@ -42,6 +42,33 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
+      - name: Debug workspace
+        run: |
+          echo "========== SYSTEM =========="
+          node -v
+          npm -v
+          echo ""
+          echo "========== LOCATION =========="
+          pwd
+          echo ""
+          echo "========== FILES =========="
+          ls -la
+          echo ""
+          echo "========== GIT =========="
+          git branch
+          git rev-parse HEAD
+          git status
+          echo ""
+          echo "========== PACKAGE FILES =========="
+          test -f package.json && echo "package.json FOUND" || echo "package.json MISSING"
+          test -f package-lock.json && echo "package-lock.json FOUND" || echo "package-lock.json MISSING"
+          echo ""
+          echo "========== SEARCH =========="
+          find . -name "package-lock.json"
+          echo ""
+          echo "========== ROOT CONTENT =========="
+          ls -la .
+
       - run: npm ci
 
       - run: npx prisma generate
@@ -80,6 +107,33 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
+
+      - name: Debug workspace
+        run: |
+          echo "========== SYSTEM =========="
+          node -v
+          npm -v
+          echo ""
+          echo "========== LOCATION =========="
+          pwd
+          echo ""
+          echo "========== FILES =========="
+          ls -la
+          echo ""
+          echo "========== GIT =========="
+          git branch
+          git rev-parse HEAD
+          git status
+          echo ""
+          echo "========== PACKAGE FILES =========="
+          test -f package.json && echo "package.json FOUND" || echo "package.json MISSING"
+          test -f package-lock.json && echo "package-lock.json FOUND" || echo "package-lock.json MISSING"
+          echo ""
+          echo "========== SEARCH =========="
+          find . -name "package-lock.json"
+          echo ""
+          echo "========== ROOT CONTENT =========="
+          ls -la .
 
       - run: npm ci
 
@@ -131,6 +185,33 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
+      - name: Debug workspace
+        run: |
+          echo "========== SYSTEM =========="
+          node -v
+          npm -v
+          echo ""
+          echo "========== LOCATION =========="
+          pwd
+          echo ""
+          echo "========== FILES =========="
+          ls -la
+          echo ""
+          echo "========== GIT =========="
+          git branch
+          git rev-parse HEAD
+          git status
+          echo ""
+          echo "========== PACKAGE FILES =========="
+          test -f package.json && echo "package.json FOUND" || echo "package.json MISSING"
+          test -f package-lock.json && echo "package-lock.json FOUND" || echo "package-lock.json MISSING"
+          echo ""
+          echo "========== SEARCH =========="
+          find . -name "package-lock.json"
+          echo ""
+          echo "========== ROOT CONTENT =========="
+          ls -la .
+
       - run: npm ci
 
       - run: npx prisma generate
@@ -172,6 +253,33 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
+
+      - name: Debug workspace
+        run: |
+          echo "========== SYSTEM =========="
+          node -v
+          npm -v
+          echo ""
+          echo "========== LOCATION =========="
+          pwd
+          echo ""
+          echo "========== FILES =========="
+          ls -la
+          echo ""
+          echo "========== GIT =========="
+          git branch
+          git rev-parse HEAD
+          git status
+          echo ""
+          echo "========== PACKAGE FILES =========="
+          test -f package.json && echo "package.json FOUND" || echo "package.json MISSING"
+          test -f package-lock.json && echo "package-lock.json FOUND" || echo "package-lock.json MISSING"
+          echo ""
+          echo "========== SEARCH =========="
+          find . -name "package-lock.json"
+          echo ""
+          echo "========== ROOT CONTENT =========="
+          ls -la .
 
       - run: npm ci
 
