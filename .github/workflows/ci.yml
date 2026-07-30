@@ -73,7 +73,13 @@ jobs:
 
       - run: npx prisma generate
 
-      - run: npx prisma migrate deploy
+      - name: Prisma migration diagnostics
+        run: |
+          npx prisma migrate status
+          echo "---"
+          npx prisma migrate deploy
+          echo "---"
+          npx prisma db pull --print
         env:
           DATABASE_URL: ${{ env.DATABASE_URL }}
 
@@ -139,7 +145,13 @@ jobs:
 
       - run: npx prisma generate
 
-      - run: npx prisma migrate deploy
+      - name: Prisma migration diagnostics
+        run: |
+          npx prisma migrate status
+          echo "---"
+          npx prisma migrate deploy
+          echo "---"
+          npx prisma db pull --print
         env:
           DATABASE_URL: ${{ env.DATABASE_URL }}
 
@@ -216,7 +228,13 @@ jobs:
 
       - run: npx prisma generate
 
-      - run: npx prisma migrate deploy
+      - name: Prisma migration diagnostics
+        run: |
+          npx prisma migrate status
+          echo "---"
+          npx prisma migrate deploy
+          echo "---"
+          npx prisma db pull --print
         env:
           DATABASE_URL: ${{ env.DATABASE_URL }}
 
