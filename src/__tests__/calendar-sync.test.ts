@@ -10,11 +10,15 @@ const googleMock = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('@/app/lib/google', () => ({
-  google: { events: googleMock.events },
-  getAuthUrl: vi.fn().mockReturnValue('http://auth.url'),
-  exchangeCode: vi.fn().mockResolvedValue({ access_token: 'mock-token' }),
-}));
+vi.mock('@/app/lib/google', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('@/app/lib/google')>();
+  return {
+    ...mod,
+    getGoogleCalendar: vi.fn(() => ({ events: googleMock.events })),
+    getAuthUrl: vi.fn().mockReturnValue('http://auth.url'),
+    exchangeCode: vi.fn().mockResolvedValue({ access_token: 'mock-token' }),
+  };
+});
 
 describe('Google Calendar Sync', () => {
   beforeAll(async () => {

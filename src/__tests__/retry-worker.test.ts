@@ -10,11 +10,15 @@ const googleMock = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('@/app/lib/google', () => ({
-  google: { events: googleMock.events },
-  getAuthUrl: vi.fn().mockReturnValue('http://auth.url'),
-  exchangeCode: vi.fn().mockResolvedValue({ access_token: 'mock-token' }),
-}));
+vi.mock('@/app/lib/google', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('@/app/lib/google')>();
+  return {
+    ...mod,
+    getGoogleCalendar: vi.fn(() => ({ events: googleMock.events })),
+    getAuthUrl: vi.fn().mockReturnValue('http://auth.url'),
+    exchangeCode: vi.fn().mockResolvedValue({ access_token: 'mock-token' }),
+  };
+});
 
 describe('Retry Worker', () => {
   beforeAll(async () => {
@@ -84,6 +88,38 @@ describe('Retry Worker', () => {
 
       const jobs = await prisma.calendarSyncJob.findMany({ where: { bookingId: booking.id } });
       expect(jobs).toHaveLength(0);
+    });
+
+    it('should create retry job on 429 rate limit', async () => {
+      googleMock.events.insert.mockRejectedValueOnce({ code: 429, message: 'Rate Limit Exceeded' });
+
+      const doctor = await createTestDoctor();
+      const booking = await prisma.booking.create({
+        data: { name: 'Rate Limited', phone: '+966500000035', service: 'Test', date: '2026-09-04', time: '09:00', doctorId: doctor.id, source: 'dashboard' },
+      });
+
+      const { syncBooking } = await import('@/app/lib/googleCalendar');
+      await syncBooking(booking, doctor);
+
+      const jobs = await prisma.calendarSyncJob.findMany({ where: { bookingId: booking.id } });
+      expect(jobs).toHaveLength(1);
+      expect(jobs[0].status).toBe('pending');
+    });
+
+    it('should create retry job on network error (code 0)', async () => {
+      googleMock.events.insert.mockRejectedValueOnce(new Error('network error'));
+
+      const doctor = await createTestDoctor();
+      const booking = await prisma.booking.create({
+        data: { name: 'Network Err', phone: '+966500000036', service: 'Test', date: '2026-09-05', time: '10:00', doctorId: doctor.id, source: 'dashboard' },
+      });
+
+      const { syncBooking } = await import('@/app/lib/googleCalendar');
+      await syncBooking(booking, doctor);
+
+      const jobs = await prisma.calendarSyncJob.findMany({ where: { bookingId: booking.id } });
+      expect(jobs).toHaveLength(1);
+      expect(jobs[0].status).toBe('pending');
     });
   });
 
