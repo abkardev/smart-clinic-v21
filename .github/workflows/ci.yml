@@ -75,9 +75,9 @@ jobs:
 
       - name: Prisma migration diagnostics
         run: |
-          npx prisma migrate status
-          echo "---"
           npx prisma migrate deploy
+          echo "---"
+          npx prisma migrate status
           echo "---"
           npx prisma db pull --print
         env:
@@ -147,9 +147,9 @@ jobs:
 
       - name: Prisma migration diagnostics
         run: |
-          npx prisma migrate status
-          echo "---"
           npx prisma migrate deploy
+          echo "---"
+          npx prisma migrate status
           echo "---"
           npx prisma db pull --print
         env:
@@ -230,9 +230,9 @@ jobs:
 
       - name: Prisma migration diagnostics
         run: |
-          npx prisma migrate status
-          echo "---"
           npx prisma migrate deploy
+          echo "---"
+          npx prisma migrate status
           echo "---"
           npx prisma db pull --print
         env:
